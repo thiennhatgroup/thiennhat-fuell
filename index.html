@@ -478,8 +478,11 @@
         </div>
         <div class="row">
           <div><label>Số lít</label><input id="pLit" inputmode="decimal" value="${e?esc(e.liters):''}"></div>
-          <div><label>KM cũ</label><input id="pKmOld" inputmode="decimal" value="${e&&e.kmOld!=null?esc(e.kmOld):''}"></div>
-          <div><label>KM mới</label><input id="pKmNew" inputmode="decimal" value="${e&&e.kmNew!=null?esc(e.kmNew):''}"></div>
+          <div id="pKmWrap" class="row" style="flex:2;margin:0">
+            <div><label>KM cũ (tự động)</label><input id="pKmOld" inputmode="decimal" readonly
+              style="background:var(--bg);color:var(--muted)" value="${e&&e.kmOld!=null?esc(e.kmOld):''}"></div>
+            <div><label>KM mới</label><input id="pKmNew" inputmode="decimal" value="${e&&e.kmNew!=null?esc(e.kmNew):''}"></div>
+          </div>
         </div>
         <div id="pKmHint" class="muted" style="font-size:13px;min-height:18px"></div>
         <div id="pSupWrap"><label>Nhà cung cấp (bơm ngoài)</label><select id="pSup"><option value="">—</option>${opt(sups,'id','name',e&&e.supplierId)}</select></div>
@@ -502,22 +505,29 @@
         document.getElementById('pTankWrap').style.display = kind==='bom_ngoai'?'none':'';
         document.getElementById('pSupWrap').style.display = kind==='bom_ngoai'?'':'none';
       };
+      // Ẩn cả khu KM khi xe không có công-tơ-mét (không nhập KM).
+      const setKmUI=()=>{
+        const hasOdo = vehHasOdo(val('pVeh'));
+        document.getElementById('pKmWrap').style.display = hasOdo?'':'none';
+        if(!hasOdo){ document.getElementById('pKmNew').value=''; document.getElementById('pKmHint').textContent=''; }
+      };
       const kmHint=()=>{
         const o=num(val('pKmOld')), n=num(val('pKmNew')), h=document.getElementById('pKmHint');
-        if(!val('pKmOld')||!val('pKmNew')){ h.textContent=''; return; }
-        const d=n-o; h.textContent = d<0?`⚠ KM mới nhỏ hơn KM cũ (${fmtNum(d)}).`:`KM đi: ${fmtNum(d)}`;
+        if(!val('pKmOld')){ h.textContent=val('pKmNew')?'Chưa có KM cũ trong hệ thống — lần bơm đầu của xe này.':''; h.style.color='var(--muted)'; return; }
+        if(!val('pKmNew')){ h.textContent=`KM cũ trong hệ thống: ${fmtNum(o)}. Nhập KM mới để hệ thống tự trừ.`; h.style.color='var(--muted)'; return; }
+        const d=n-o; h.textContent = d<0?`⚠ KM mới nhỏ hơn KM cũ (${fmtNum(d)}).`:`KM đi (tự trừ): ${fmtNum(d)}`;
         h.style.color = d<0?'var(--danger)':'var(--muted)';
       };
       document.getElementById('pTxn').onchange=setKindUI;
-      document.getElementById('pKmOld').oninput=kmHint;
       document.getElementById('pKmNew').oninput=kmHint;
       document.getElementById('pVeh').onchange=async(ev)=>{
+        setKmUI();
         if(e) return; // sửa thì giữ nguyên KM cũ đã có
         const vid=ev.target.value; if(!vid){ document.getElementById('pKmOld').value=''; kmHint(); return; }
         try{ const r=await call('rpc_vehicle_last_km',{p_vehicle_id:vid});
           document.getElementById('pKmOld').value=r.kmOld!=null?r.kmOld:''; kmHint(); }catch(_){}
       };
-      setKindUI(); kmHint();
+      setKindUI(); setKmUI(); kmHint();
       document.getElementById('pSave').onclick=()=>savePump(e, el);
       document.getElementById('pSubmit').onclick=()=>submitPumpDay(el);
       const c=document.getElementById('pCancel'); if(c) c.onclick=()=>{ state.pumpEdit=null; renderPumpUI(el); };
