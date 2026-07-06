@@ -7,6 +7,20 @@
 -- ============================================================================
 
 -- ----------------------------------------------------------------------------
+-- unaccent + normalize_text: 0001 tạo normalize_text gọi unaccent() KHÔNG chỉ
+-- định schema và KHÔNG set search_path. Trên Supabase, unaccent nằm ở schema
+-- `extensions` nên khi index bên dưới gọi normalize_text sẽ lỗi
+-- "function unaccent(text) does not exist". Bảo đảm extension tồn tại + gán
+-- search_path cho normalize_text để phân giải unaccent (dù ở public hay extensions).
+-- (create or replace: override an toàn hàm đang chạy, KHÔNG sửa migration 0001.)
+-- ----------------------------------------------------------------------------
+create extension if not exists unaccent with schema extensions;
+create or replace function normalize_text(p_text text) returns text
+language sql immutable set search_path = public, extensions, pg_temp as $$
+  select trim(regexp_replace(lower(unaccent(replace(coalesce(p_text, ''), 'đ', 'd'))), '[^a-z0-9]+', ' ', 'g'));
+$$;
+
+-- ----------------------------------------------------------------------------
 -- Bảng danh mục
 -- ----------------------------------------------------------------------------
 create table if not exists oil_types (
