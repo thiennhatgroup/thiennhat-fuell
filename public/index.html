@@ -49,6 +49,10 @@
     .msg{color:var(--danger);font-size:13px;min-height:18px;margin-top:6px}
     .soon{padding:30px 10px;text-align:center;color:var(--muted)}
     .soon .big{font-size:40px}
+    .modalOverlay{position:fixed;inset:0;background:rgba(20,30,45,.55);display:none;
+      align-items:flex-start;justify-content:center;z-index:60;padding:24px;overflow:auto}
+    .modalCard{background:#fff;border-radius:14px;padding:18px;max-width:720px;width:100%}
+    .thumb{width:100%;max-height:170px;object-fit:cover;border-radius:10px;border:1px solid var(--line)}
   </style>
 </head>
 <body>
@@ -80,6 +84,7 @@
   </div>
 
   <div id="toast" class="toast"></div>
+  <div id="modal" class="modalOverlay"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="./config.js"></script>
@@ -484,6 +489,9 @@
           ${e?'<button class="ghost" id="pCancel" style="flex:0">Hủy</button>':''}
         </div><div id="pMsg" class="msg"></div>
       </div>
+      ${e?`<div class="panel"><h2>Ảnh chứng từ</h2>
+        <p class="muted" style="margin-top:-6px">Bắt buộc ảnh đồng hồ bơm; ảnh công-tơ-mét bắt buộc khi xe có công-tơ-mét. Chụp trước khi Submit ngày.</p>
+        <div id="photoBox" class="muted">Đang tải ảnh…</div></div>`:''}
       <div class="panel"><div class="row" style="align-items:center"><h2 style="flex:1;margin:0">Phiếu của tôi</h2>
         <button id="pSubmit" class="sm" style="flex:0">Submit ngày</button></div>
         <div id="pList" style="margin-top:12px"></div></div>`;
@@ -514,6 +522,61 @@
       document.getElementById('pSubmit').onclick=()=>submitPumpDay(el);
       const c=document.getElementById('pCancel'); if(c) c.onclick=()=>{ state.pumpEdit=null; renderPumpUI(el); };
       renderPumpList();
+      if(e) renderPhotoSection(e.id, e.vehicleId);
+    }
+
+    function vehHasOdo(vehicleId){
+      const v=((state.active&&state.active.vehicles)||[]).find(x=>x.id===vehicleId);
+      return !v || v.hasOdometer;  // mặc định coi là có công-tơ-mét nếu không rõ
+    }
+    async function signedUrl(path){
+      try{ const {data}=await sb.storage.from('chung-tu').createSignedUrl(path,300); return (data&&data.signedUrl)||''; }
+      catch(_){ return ''; }
+    }
+    const KIND_LABEL={ pump_meter:'Ảnh đồng hồ bơm', odometer:'Ảnh công-tơ-mét' };
+    async function renderPhotoSection(ledgerId, vehicleId){
+      const box=document.getElementById('photoBox'); if(!box) return;
+      let photos=[];
+      try{ photos=(await call('rpc_pump_photo_list',{p_ledger_id:ledgerId})).rows||[]; }
+      catch(err){ box.innerHTML=`<span class="msg">${esc(err.message)}</span>`; return; }
+      const slots=[['pump_meter',true]];
+      if(vehHasOdo(vehicleId)) slots.push(['odometer',true]);
+      const parts=[];
+      for(const [kind] of slots){
+        const p=photos.find(x=>x.kind===kind);
+        if(p){
+          const url=await signedUrl(p.path);
+          parts.push(`<div style="flex:1;min-width:160px"><label>${KIND_LABEL[kind]}</label>
+            ${url?`<a href="${esc(url)}" target="_blank"><img class="thumb" src="${esc(url)}"></a>`:'<div class="muted">Đã có ảnh.</div>'}
+            <div style="margin-top:6px"><button class="ghost sm" data-delphoto="${p.id}">Xóa ảnh</button></div></div>`);
+        }else{
+          parts.push(`<div style="flex:1;min-width:160px"><label>${KIND_LABEL[kind]} <span style="color:var(--danger)">*</span></label>
+            <input type="file" accept="image/*" capture="environment" data-kind="${kind}"></div>`);
+        }
+      }
+      box.innerHTML=`<div class="row">${parts.join('')}</div><div id="photoMsg" class="msg"></div>`;
+      box.querySelectorAll('input[type=file]').forEach(inp=> inp.onchange=()=>uploadPhoto(ledgerId, vehicleId, inp.dataset.kind, inp.files[0]));
+      box.querySelectorAll('[data-delphoto]').forEach(b=> b.onclick=()=>deletePhoto(ledgerId, vehicleId, b.dataset.delphoto));
+    }
+    async function uploadPhoto(ledgerId, vehicleId, kind, file){
+      if(!file) return;
+      const msg=document.getElementById('photoMsg'); if(msg){ msg.style.color='var(--muted)'; msg.textContent='Đang tải ảnh…'; }
+      try{
+        const ext=((file.name||'').split('.').pop()||'jpg').toLowerCase().replace(/[^a-z0-9]/g,'')||'jpg';
+        const path=`${ledgerId}/${kind}-${Date.now()}.${ext}`;
+        const {error}=await sb.storage.from('chung-tu').upload(path, file, {contentType:file.type||'image/jpeg', upsert:false});
+        if(error) throw error;
+        await call('rpc_pump_photo_add',{p_ledger_id:ledgerId, p_kind:kind, p_path:path});
+        toast('Đã thêm ảnh.'); renderPhotoSection(ledgerId, vehicleId);
+      }catch(err){ if(msg){ msg.style.color='var(--danger)'; msg.textContent=err.message||'Tải ảnh thất bại.'; } }
+    }
+    async function deletePhoto(ledgerId, vehicleId, photoId){
+      if(!confirm('Xóa ảnh này?')) return;
+      try{
+        const r=await call('rpc_pump_photo_delete',{p_id:photoId});
+        if(r&&r.path){ try{ await sb.storage.from('chung-tu').remove([r.path]); }catch(_){} }
+        toast('Đã xóa ảnh.'); renderPhotoSection(ledgerId, vehicleId);
+      }catch(err){ toast(err.message); }
     }
 
     function pumpParams(e){
@@ -529,9 +592,11 @@
     async function savePump(e, el){
       const msg=document.getElementById('pMsg'); msg.textContent='';
       try{
-        await call(e?'rpc_pump_update':'rpc_pump_create', pumpParams(e));
-        toast(e?'Đã lưu phiếu.':'Đã thêm phiếu.'); state.pumpEdit=null;
+        const res=await call(e?'rpc_pump_update':'rpc_pump_create', pumpParams(e));
+        toast(e?'Đã lưu phiếu.':'Đã thêm phiếu. Bổ sung ảnh chứng từ.');
+        state.pumpEdit=(e&&e.id)||(res&&res.id)||null;  // ở lại chế độ sửa để đính ảnh
         await loadPumpMine(); renderPumpUI(el);
+        if(state.pumpEdit) window.scrollTo(0,0);
       }catch(err){ msg.textContent=err.message; }
     }
     async function submitPumpDay(el){
@@ -580,9 +645,11 @@
               <td>${esc(r.plate||'')}</td><td>${esc(r.txnName||'')}</td><td>${esc(r.tankName||'')}</td>
               <td>${fmtNum(r.liters)}</td><td>${r.kmRun!=null?fmtNum(r.kmRun):''}</td>
               <td style="white-space:nowrap">
+                <button class="ghost sm" data-photos="${r.id}">Ảnh</button>
                 <button class="sm" data-ok="${r.id}" style="background:var(--ok)">Khớp</button>
                 <button class="ghost sm" data-no="${r.id}">Lệch</button></td></tr>`).join('')}
             </tbody></table>`:'<span class="muted">Không có phiếu chờ đối chiếu.</span>'}</div>`;
+        el.querySelectorAll('[data-photos]').forEach(b=> b.onclick=()=>viewPhotos(b.dataset.photos));
         el.querySelectorAll('[data-ok]').forEach(b=> b.onclick=()=>reviewPump('rpc_pump_approve',{p_id:b.dataset.ok},el));
         el.querySelectorAll('[data-no]').forEach(b=> b.onclick=()=>{
           const reason=(prompt('Lý do trả về (Lệch):','')||'').trim(); if(!reason) return;
@@ -594,6 +661,31 @@
       try{ await call(rpc, params); toast('Đã xử lý phiếu.'); renderReview(el); }
       catch(err){ toast(err.message); }
     }
+    async function viewPhotos(ledgerId){
+      let rows=[];
+      try{ rows=(await call('rpc_pump_photo_list',{p_ledger_id:ledgerId})).rows||[]; }
+      catch(err){ toast(err.message); return; }
+      if(!rows.length){ toast('Phiếu chưa có ảnh.'); return; }
+      showModal('Ảnh chứng từ', '<div class="muted">Đang tải ảnh…</div>');
+      const parts=[];
+      for(const p of rows){
+        const url=await signedUrl(p.path);
+        parts.push(`<div style="flex:1;min-width:200px"><label>${KIND_LABEL[p.kind]||esc(p.kind)}</label>
+          ${url?`<a href="${esc(url)}" target="_blank"><img class="thumb" style="max-height:none" src="${esc(url)}"></a>`:'<span class="muted">Không tải được ảnh.</span>'}</div>`);
+      }
+      showModal('Ảnh chứng từ', `<div class="row">${parts.join('')}</div>`);
+    }
+    function showModal(title, html){
+      const m=document.getElementById('modal');
+      m.innerHTML=`<div class="modalCard"><div class="row" style="align-items:center;margin-bottom:8px">
+        <h2 style="flex:1;margin:0">${esc(title)}</h2>
+        <button class="ghost sm" id="modalClose" style="flex:0">Đóng</button></div>
+        <div>${html}</div></div>`;
+      m.style.display='flex';
+      m.onclick=(ev)=>{ if(ev.target===m) closeModal(); };
+      document.getElementById('modalClose').onclick=closeModal;
+    }
+    function closeModal(){ const m=document.getElementById('modal'); m.style.display='none'; m.innerHTML=''; }
 
     document.getElementById('loginBtn').onclick=login;
     document.getElementById('logoutBtn').onclick=logout;

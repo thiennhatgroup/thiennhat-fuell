@@ -58,6 +58,14 @@ begin
   perform rpc_pump_update(v_id, v_veh, v_txn, v_oil, 120, v_tank, 5200, 4000);
   assert (select liters from ledger where id = v_id) = 120, '(1) sửa lít thất bại';
 
+  -- Đính ảnh bắt buộc cho mọi phiếu Nháp (S3: submit chặn nếu thiếu ảnh).
+  -- SIM-99 có công-tơ-mét (mặc định) nên cần cả pump_meter + odometer.
+  insert into pump_photos (ledger_id, kind, storage_path, created_by)
+  select l.id, k.kind, l.id::text || '/' || k.kind || '.jpg', v_uid_a
+  from ledger l cross join (values ('pump_meter'),('odometer')) k(kind)
+  where l.created_by = v_uid_a and l.entry_type = 'bom' and l.status = 'Nhap'
+    and not exists (select 1 from pump_photos p where p.ledger_id = l.id and p.kind = k.kind);
+
   -- === Submit ngày → ChoDoiChieu + cấp Số phiếu ===
   v_res := rpc_pump_submit_day();
   assert (v_res->>'count')::int = 2, '(1) submit phải chốt 2 phiếu';
