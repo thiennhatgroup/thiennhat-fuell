@@ -30,15 +30,13 @@ alter table pump_photos enable row level security;
 revoke all on pump_photos from anon, authenticated;
 
 -- ----------------------------------------------------------------------------
--- Storage: bucket riêng tư + policy trên storage.objects.
--- Đọc: mọi nhân sự đang Hoạt động (ThuKho/KeToan/Admin). Ghi/xóa: người có
--- quyền 'pump:create'. Helper SECURITY DEFINER để đọc profiles/role_permissions
--- trong ngữ cảnh policy (authenticated không được đọc trực tiếp các bảng đó).
+-- Helper cho policy Storage (đọc profiles/role_permissions trong ngữ cảnh policy;
+-- authenticated không được đọc trực tiếp các bảng đó nên phải SECURITY DEFINER).
+-- Bản thân bucket + policy trên storage.objects KHÔNG tạo ở migration: vai trò
+-- chạy `supabase db push` (postgres) không sở hữu storage.objects nên
+-- `create policy` sẽ lỗi "must be owner of table objects" và làm hỏng cả push.
+-- => Tạo bucket + policy MỘT LẦN qua Dashboard, xem supabase/storage_chungtu_setup.md.
 -- ----------------------------------------------------------------------------
-insert into storage.buckets (id, name, public)
-values ('chung-tu', 'chung-tu', false)
-on conflict (id) do nothing;
-
 create or replace function chungtu_can_read() returns boolean
 language sql stable security definer set search_path = public, pg_temp as $$
   select exists (select 1 from profiles where id = auth.uid() and status = 'Hoạt động');
@@ -54,18 +52,6 @@ language sql stable security definer set search_path = public, pg_temp as $$
 $$;
 grant execute on function chungtu_can_read() to authenticated;
 grant execute on function chungtu_can_upload() to authenticated;
-
-drop policy if exists chungtu_read on storage.objects;
-create policy chungtu_read on storage.objects for select to authenticated
-  using (bucket_id = 'chung-tu' and public.chungtu_can_read());
-
-drop policy if exists chungtu_insert on storage.objects;
-create policy chungtu_insert on storage.objects for insert to authenticated
-  with check (bucket_id = 'chung-tu' and public.chungtu_can_upload());
-
-drop policy if exists chungtu_delete on storage.objects;
-create policy chungtu_delete on storage.objects for delete to authenticated
-  using (bucket_id = 'chung-tu' and public.chungtu_can_upload());
 
 -- ----------------------------------------------------------------------------
 -- RPC ghi metadata ảnh — chỉ người tạo, chỉ khi phiếu còn Nháp. Đường dẫn phải
