@@ -1,0 +1,9 @@
+{
+  "name": "Thiên Nhật — Tồn kho Xăng dầu",
+  "short_name": "TN Xăng dầu",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#0E5AA7",
+  "theme_color": "#0E5AA7",
+  "icons": []
+}
