@@ -49,6 +49,10 @@
     .msg{color:var(--danger);font-size:13px;min-height:18px;margin-top:6px}
     .soon{padding:30px 10px;text-align:center;color:var(--muted)}
     .soon .big{font-size:40px}
+    .modalOverlay{position:fixed;inset:0;background:rgba(20,30,45,.55);display:none;
+      align-items:flex-start;justify-content:center;z-index:60;padding:24px;overflow:auto}
+    .modalCard{background:#fff;border-radius:14px;padding:18px;max-width:720px;width:100%}
+    .thumb{width:100%;max-height:170px;object-fit:cover;border-radius:10px;border:1px solid var(--line)}
   </style>
 </head>
 <body>
@@ -80,6 +84,7 @@
   </div>
 
   <div id="toast" class="toast"></div>
+  <div id="modal" class="modalOverlay"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="./config.js"></script>
@@ -170,6 +175,9 @@
       const scr=SCREENS.find(s=>s[0]===state.screen);
       if(state.screen==='home') return renderHome(el);
       if(state.screen==='users') return renderUsers(el);
+      if(state.screen==='catalog') return renderCatalog(el);
+      if(state.screen==='pump') return renderPump(el);
+      if(state.screen==='review') return renderReview(el);
       // Placeholder cho các slice chưa build
       el.innerHTML=`<div class="panel soon"><div class="big">🛠️</div>
         <h2>${esc(scr[1])}</h2>
@@ -251,6 +259,433 @@
       try{ await call('rpc_admin_update_user',{ p_id:id, p_status:next }); toast('Đã cập nhật.'); loadUsers(); }
       catch(err){ toast(err.message); }
     }
+
+    // ---- Màn Danh mục & Xe (Kế toán / Admin) ----
+    const CAT_TABS = [
+      ['tanks',    'Téc'],
+      ['vehicles', 'Xe'],
+      ['oilTypes', 'Loại dầu'],
+      ['suppliers','Nhà cung cấp'],
+      ['txnTypes', 'Loại giao dịch']
+    ];
+    function num(v){ const n=parseFloat(String(v).replace(',','.')); return isNaN(n)?0:n; }
+    function fmtNum(v){ return (v==null||v==='')?'':Number(v).toLocaleString('vi-VN'); }
+
+    async function renderCatalog(el){
+      if(!state.catTab) state.catTab='tanks';
+      el.innerHTML=`<div class="nav" style="position:static;padding:0 0 12px;border:none" id="catNav"></div>
+        <div id="catBody" class="muted">Đang tải…</div>`;
+      const nav=document.getElementById('catNav');
+      nav.innerHTML=CAT_TABS.map(t=>`<button data-t="${t[0]}" class="${t[0]===state.catTab?'active':''}">${esc(t[1])}</button>`).join('');
+      nav.querySelectorAll('button').forEach(b=> b.onclick=()=>{ state.catTab=b.dataset.t; state.catEdit=null; renderCatalog(el); });
+      try{
+        state.catalog=await call('rpc_catalog_list');
+        renderCatTab();
+      }catch(err){ document.getElementById('catBody').innerHTML=`<span class="msg">${esc(err.message)}</span>`; }
+    }
+
+    function renderCatTab(){
+      const body=document.getElementById('catBody'); if(!body) return;
+      const tab=state.catTab;
+      if(tab==='tanks')     return renderTankTab(body);
+      if(tab==='vehicles')  return renderVehicleTab(body);
+      if(tab==='oilTypes')  return renderOilTypeTab(body);
+      if(tab==='suppliers') return renderSupplierTab(body);
+      if(tab==='txnTypes')  return renderTxnTypeTab(body);
+    }
+
+    function statusCell(active){ return active?'<span class="badge">Hoạt động</span>':'<span class="muted">Ngừng</span>'; }
+    function rowActions(kind, r){
+      return `<button class="ghost sm" data-edit="${r.id}">Sửa</button>
+        <button class="ghost sm" data-toggle="${r.id}" data-active="${r.active?1:0}">${r.active?'Ngừng':'Bật'}</button>`;
+    }
+    async function catToggle(kind, id, active){
+      try{ await call('rpc_catalog_toggle',{ p_kind:kind, p_id:id, p_active:!active }); toast('Đã cập nhật.');
+        state.catalog=await call('rpc_catalog_list'); renderCatTab(); }
+      catch(err){ toast(err.message); }
+    }
+    async function catSave(rpc, params, msgId){
+      const msg=document.getElementById(msgId); if(msg) msg.textContent='';
+      try{ await call(rpc, params); toast('Đã lưu.'); state.catEdit=null;
+        state.catalog=await call('rpc_catalog_list'); renderCatTab(); }
+      catch(err){ if(msg) msg.textContent=err.message; else toast(err.message); }
+    }
+
+    // --- Téc ---
+    function renderTankTab(body){
+      const rows=state.catalog.tanks||[], oils=state.catalog.oilTypes||[];
+      const e=(state.catEdit&&rows.find(r=>r.id===state.catEdit))||null;
+      const oilOpts=`<option value="">— chọn loại dầu —</option>`+oils.map(o=>`<option value="${o.id}" ${e&&e.oilTypeId===o.id?'selected':''}>${esc(o.name)}</option>`).join('');
+      body.innerHTML=`<div class="panel"><h2>${e?'Sửa téc':'Thêm téc'}</h2>
+        <div class="row">
+          <div><label>Tên téc</label><input id="tName" value="${e?esc(e.name):''}" placeholder="Téc 1"></div>
+          <div><label>Loại dầu</label><select id="tOil">${oilOpts}</select></div>
+        </div>
+        <div class="row">
+          <div><label>Sức chứa (lít)</label><input id="tCap" inputmode="decimal" value="${e?esc(e.capacity):''}"></div>
+          <div><label>Reorder point (lít)</label><input id="tReorder" inputmode="decimal" value="${e?esc(e.reorderPoint):''}"></div>
+          <div><label>Lead-time (ngày)</label><input id="tLead" inputmode="numeric" value="${e?esc(e.leadTimeDays):''}"></div>
+        </div>
+        <div class="row" style="margin-top:12px;flex:0">
+          <button id="tSave" style="flex:0">${e?'Lưu':'Thêm'}</button>
+          ${e?'<button class="ghost" id="tCancel" style="flex:0">Hủy</button>':''}
+        </div><div id="tMsg" class="msg"></div></div>
+        <div class="panel"><h2>Danh sách téc</h2>${rows.length?`<table><thead><tr>
+          <th>Tên</th><th>Loại dầu</th><th>Sức chứa</th><th>Reorder</th><th>Lead-time</th><th>Trạng thái</th><th></th></tr></thead><tbody>
+          ${rows.map(r=>`<tr><td>${esc(r.name)}</td><td>${esc(r.oilTypeName||'')}</td>
+            <td>${fmtNum(r.capacity)}</td><td>${fmtNum(r.reorderPoint)}</td><td>${esc(r.leadTimeDays)}</td>
+            <td>${statusCell(r.active)}</td><td style="white-space:nowrap">${rowActions('tank',r)}</td></tr>`).join('')}
+          </tbody></table>`:'<span class="muted">Chưa có téc.</span>'}</div>`;
+      document.getElementById('tSave').onclick=()=>catSave('rpc_tank_upsert',{
+        p_id:e?e.id:null, p_name:val('tName'), p_oil_type_id:val('tOil')||null,
+        p_capacity:num(val('tCap')), p_reorder:num(val('tReorder')),
+        p_lead_time_days:Math.round(num(val('tLead'))), p_active:e?e.active:true },'tMsg');
+      wireEditToggle(body,'tank');
+    }
+
+    // --- Xe ---
+    function renderVehicleTab(body){
+      const rows=state.catalog.vehicles||[];
+      const e=(state.catEdit&&rows.find(r=>r.id===state.catEdit))||null;
+      body.innerHTML=`<div class="panel"><h2>${e?'Sửa xe':'Thêm xe'}</h2>
+        <div class="row">
+          <div><label>Biển số</label><input id="vPlate" value="${e?esc(e.plate):''}" placeholder="51C-123.45"></div>
+          <div><label>Định mức bơm</label><input id="vNorm" inputmode="decimal" value="${e?esc(e.pumpNorm):''}"></div>
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;margin-top:12px">
+          <input type="checkbox" id="vOdo" style="width:auto;min-height:auto" ${(!e||e.hasOdometer)?'checked':''}> Có công-tơ-mét (đồng hồ KM)</label>
+        <div class="row" style="margin-top:12px;flex:0">
+          <button id="vSave" style="flex:0">${e?'Lưu':'Thêm'}</button>
+          ${e?'<button class="ghost" id="vCancel" style="flex:0">Hủy</button>':''}
+        </div><div id="vMsg" class="msg"></div></div>
+        <div class="panel"><h2>Danh sách xe</h2>${rows.length?`<table><thead><tr>
+          <th>Biển số</th><th>Định mức bơm</th><th>Công-tơ-mét</th><th>Trạng thái</th><th></th></tr></thead><tbody>
+          ${rows.map(r=>`<tr><td>${esc(r.plate)}</td><td>${fmtNum(r.pumpNorm)}</td>
+            <td>${r.hasOdometer?'Có':'Không'}</td><td>${statusCell(r.active)}</td>
+            <td style="white-space:nowrap">${rowActions('vehicle',r)}</td></tr>`).join('')}
+          </tbody></table>`:'<span class="muted">Chưa có xe.</span>'}</div>`;
+      document.getElementById('vSave').onclick=()=>catSave('rpc_vehicle_upsert',{
+        p_id:e?e.id:null, p_plate:val('vPlate'), p_pump_norm:num(val('vNorm')),
+        p_has_odometer:document.getElementById('vOdo').checked, p_active:e?e.active:true },'vMsg');
+      wireEditToggle(body,'vehicle');
+    }
+
+    // --- Loại dầu ---
+    function renderOilTypeTab(body){
+      const rows=state.catalog.oilTypes||[];
+      const e=(state.catEdit&&rows.find(r=>r.id===state.catEdit))||null;
+      body.innerHTML=`<div class="panel"><h2>${e?'Sửa loại dầu':'Thêm loại dầu'}</h2>
+        <div class="row"><div><label>Tên loại dầu</label><input id="oName" value="${e?esc(e.name):''}" placeholder="DO 0.05S"></div></div>
+        <div class="row" style="margin-top:12px;flex:0">
+          <button id="oSave" style="flex:0">${e?'Lưu':'Thêm'}</button>
+          ${e?'<button class="ghost" id="oCancel" style="flex:0">Hủy</button>':''}
+        </div><div id="oMsg" class="msg"></div></div>
+        <div class="panel"><h2>Danh sách loại dầu</h2>${rows.length?`<table><thead><tr>
+          <th>Tên</th><th>Trạng thái</th><th></th></tr></thead><tbody>
+          ${rows.map(r=>`<tr><td>${esc(r.name)}</td><td>${statusCell(r.active)}</td>
+            <td style="white-space:nowrap">${rowActions('oilType',r)}</td></tr>`).join('')}
+          </tbody></table>`:'<span class="muted">Chưa có loại dầu.</span>'}</div>`;
+      document.getElementById('oSave').onclick=()=>catSave('rpc_oil_type_upsert',{
+        p_id:e?e.id:null, p_name:val('oName'), p_active:e?e.active:true },'oMsg');
+      wireEditToggle(body,'oilType');
+    }
+
+    // --- Nhà cung cấp ---
+    function renderSupplierTab(body){
+      const rows=state.catalog.suppliers||[];
+      const e=(state.catEdit&&rows.find(r=>r.id===state.catEdit))||null;
+      body.innerHTML=`<div class="panel"><h2>${e?'Sửa nhà cung cấp':'Thêm nhà cung cấp'}</h2>
+        <div class="row">
+          <div><label>Tên NCC</label><input id="sName" value="${e?esc(e.name):''}" placeholder="Cửa hàng xăng dầu…"></div>
+          <div><label>Điện thoại</label><input id="sPhone" value="${e&&e.phone?esc(e.phone):''}"></div>
+        </div>
+        <label>Ghi chú</label><input id="sNote" value="${e&&e.note?esc(e.note):''}">
+        <div class="row" style="margin-top:12px;flex:0">
+          <button id="sSave" style="flex:0">${e?'Lưu':'Thêm'}</button>
+          ${e?'<button class="ghost" id="sCancel" style="flex:0">Hủy</button>':''}
+        </div><div id="sMsg" class="msg"></div></div>
+        <div class="panel"><h2>Danh sách nhà cung cấp</h2>${rows.length?`<table><thead><tr>
+          <th>Tên</th><th>Điện thoại</th><th>Ghi chú</th><th>Trạng thái</th><th></th></tr></thead><tbody>
+          ${rows.map(r=>`<tr><td>${esc(r.name)}</td><td>${esc(r.phone||'')}</td><td>${esc(r.note||'')}</td>
+            <td>${statusCell(r.active)}</td><td style="white-space:nowrap">${rowActions('supplier',r)}</td></tr>`).join('')}
+          </tbody></table>`:'<span class="muted">Chưa có nhà cung cấp.</span>'}</div>`;
+      document.getElementById('sSave').onclick=()=>catSave('rpc_supplier_upsert',{
+        p_id:e?e.id:null, p_name:val('sName'), p_phone:val('sPhone'), p_note:val('sNote'), p_active:e?e.active:true },'sMsg');
+      wireEditToggle(body,'supplier');
+    }
+
+    // --- Loại giao dịch (cố định: chỉ đổi tên / ngừng) ---
+    function renderTxnTypeTab(body){
+      const rows=state.catalog.txnTypes||[];
+      const e=(state.catEdit&&rows.find(r=>r.id===state.catEdit))||null;
+      body.innerHTML=`${e?`<div class="panel"><h2>Sửa loại giao dịch</h2>
+        <div class="row"><div><label>Tên hiển thị</label><input id="xName" value="${esc(e.name)}"></div></div>
+        <p class="muted">Mã: <b>${esc(e.code)}</b> · Bản chất: <b>${esc(e.kind)}</b> (cố định).</p>
+        <div class="row" style="margin-top:12px;flex:0">
+          <button id="xSave" style="flex:0">Lưu</button>
+          <button class="ghost" id="xCancel" style="flex:0">Hủy</button>
+        </div><div id="xMsg" class="msg"></div></div>`:''}
+        <div class="panel"><h2>Loại giao dịch</h2>
+        <p class="muted">Danh mục cố định (không thêm mới). Đổi tên hiển thị hoặc ngừng dùng.</p>
+        ${rows.length?`<table><thead><tr><th>Tên</th><th>Mã</th><th>Bản chất</th><th>Trạng thái</th><th></th></tr></thead><tbody>
+          ${rows.map(r=>`<tr><td>${esc(r.name)}</td><td>${esc(r.code)}</td><td>${esc(r.kind)}</td>
+            <td>${statusCell(r.active)}</td><td style="white-space:nowrap">${rowActions('txnType',r)}</td></tr>`).join('')}
+          </tbody></table>`:'<span class="muted">Chưa có.</span>'}</div>`;
+      if(e) document.getElementById('xSave').onclick=()=>catSave('rpc_txn_type_upsert',{
+        p_id:e.id, p_name:val('xName'), p_active:e.active },'xMsg');
+      wireEditToggle(body,'txnType');
+    }
+
+    function wireEditToggle(body, kind){
+      body.querySelectorAll('[data-edit]').forEach(b=> b.onclick=()=>{ state.catEdit=b.dataset.edit; renderCatTab(); });
+      body.querySelectorAll('[data-toggle]').forEach(b=> b.onclick=()=>catToggle(kind, b.dataset.toggle, b.dataset.active==='1'));
+      ['tCancel','vCancel','oCancel','sCancel','xCancel'].forEach(id=>{
+        const c=document.getElementById(id); if(c) c.onclick=()=>{ state.catEdit=null; renderCatTab(); };
+      });
+    }
+
+    // ---- Danh mục active dùng chung cho dropdown nhập liệu ----
+    async function ensureActive(force){
+      if(state.active && !force) return state.active;
+      state.active=await call('rpc_catalog_active');
+      return state.active;
+    }
+
+    // ---- Màn Nhập bơm (ThuKho) ----
+    const STATUS_LABEL={ Nhap:'Nháp', ChoDoiChieu:'Chờ đối chiếu', DaDuyet:'Đã duyệt' };
+    async function renderPump(el){
+      el.innerHTML='<div class="panel muted">Đang tải…</div>';
+      try{ await ensureActive(); await loadPumpMine(); renderPumpUI(el); }
+      catch(err){ el.innerHTML=`<div class="panel"><span class="msg">${esc(err.message)}</span></div>`; }
+    }
+    async function loadPumpMine(){ state.pumpMine=(await call('rpc_pump_list_mine')).rows||[]; }
+
+    function renderPumpUI(el){
+      const a=state.active, e=(state.pumpEdit&&state.pumpMine.find(r=>r.id===state.pumpEdit&&r.status==='Nhap'))||null;
+      const txns=(a.txnTypes||[]).filter(t=>t.kind!=='nhap');
+      const veh=a.vehicles||[], tanks=a.tanks||[], oils=a.oilTypes||[], sups=a.suppliers||[];
+      const sel=(id,v)=>v&&v===id?'selected':'';
+      const opt=(arr,idKey,labelKey,cur)=>arr.map(x=>`<option value="${x[idKey]}" ${sel(x[idKey],cur)}>${esc(x[labelKey])}</option>`).join('');
+      const curKind = e ? e.txnKind : (txns[0]&&txns[0].kind);
+      el.innerHTML=`<div class="panel"><h2>${e?`Sửa phiếu ${e.code?esc(e.code):'nháp'}`:'Phiếu bơm mới'}</h2>
+        <div class="row">
+          <div><label>Xe</label><select id="pVeh"><option value="">— chọn xe —</option>${opt(veh,'id','plate',e&&e.vehicleId)}</select></div>
+          <div><label>Loại giao dịch</label><select id="pTxn">${txns.map(t=>`<option value="${t.id}" data-kind="${t.kind}" ${sel(t.id,e&&e.txnTypeId)}>${esc(t.name)}</option>`).join('')}</select></div>
+        </div>
+        <div class="row">
+          <div id="pTankWrap"><label>Téc</label><select id="pTank"><option value="">— chọn téc —</option>${opt(tanks,'id','name',e&&e.tankId)}</select></div>
+          <div><label>Loại dầu</label><select id="pOil"><option value="">— chọn loại dầu —</option>${opt(oils,'id','name',e&&e.oilTypeId)}</select></div>
+        </div>
+        <div class="row">
+          <div><label>Số lít</label><input id="pLit" inputmode="decimal" value="${e?esc(e.liters):''}"></div>
+          <div><label>KM cũ</label><input id="pKmOld" inputmode="decimal" value="${e&&e.kmOld!=null?esc(e.kmOld):''}"></div>
+          <div><label>KM mới</label><input id="pKmNew" inputmode="decimal" value="${e&&e.kmNew!=null?esc(e.kmNew):''}"></div>
+        </div>
+        <div id="pKmHint" class="muted" style="font-size:13px;min-height:18px"></div>
+        <div id="pSupWrap"><label>Nhà cung cấp (bơm ngoài)</label><select id="pSup"><option value="">—</option>${opt(sups,'id','name',e&&e.supplierId)}</select></div>
+        <label>Ghi chú</label><input id="pNote" value="${e&&e.note?esc(e.note):''}">
+        <div class="row" style="margin-top:12px;flex:0">
+          <button id="pSave" style="flex:0">${e?'Lưu':'Thêm phiếu'}</button>
+          ${e?'<button class="ghost" id="pCancel" style="flex:0">Hủy</button>':''}
+        </div><div id="pMsg" class="msg"></div>
+      </div>
+      ${e?`<div class="panel"><h2>Ảnh chứng từ</h2>
+        <p class="muted" style="margin-top:-6px">Bắt buộc ảnh đồng hồ bơm; ảnh công-tơ-mét bắt buộc khi xe có công-tơ-mét. Chụp trước khi Submit ngày.</p>
+        <div id="photoBox" class="muted">Đang tải ảnh…</div></div>`:''}
+      <div class="panel"><div class="row" style="align-items:center"><h2 style="flex:1;margin:0">Phiếu của tôi</h2>
+        <button id="pSubmit" class="sm" style="flex:0">Submit ngày</button></div>
+        <div id="pList" style="margin-top:12px"></div></div>`;
+
+      const setKindUI=()=>{
+        const kOpt=document.getElementById('pTxn').selectedOptions[0];
+        const kind=kOpt?kOpt.dataset.kind:curKind;
+        document.getElementById('pTankWrap').style.display = kind==='bom_ngoai'?'none':'';
+        document.getElementById('pSupWrap').style.display = kind==='bom_ngoai'?'':'none';
+      };
+      const kmHint=()=>{
+        const o=num(val('pKmOld')), n=num(val('pKmNew')), h=document.getElementById('pKmHint');
+        if(!val('pKmOld')||!val('pKmNew')){ h.textContent=''; return; }
+        const d=n-o; h.textContent = d<0?`⚠ KM mới nhỏ hơn KM cũ (${fmtNum(d)}).`:`KM đi: ${fmtNum(d)}`;
+        h.style.color = d<0?'var(--danger)':'var(--muted)';
+      };
+      document.getElementById('pTxn').onchange=setKindUI;
+      document.getElementById('pKmOld').oninput=kmHint;
+      document.getElementById('pKmNew').oninput=kmHint;
+      document.getElementById('pVeh').onchange=async(ev)=>{
+        if(e) return; // sửa thì giữ nguyên KM cũ đã có
+        const vid=ev.target.value; if(!vid){ document.getElementById('pKmOld').value=''; kmHint(); return; }
+        try{ const r=await call('rpc_vehicle_last_km',{p_vehicle_id:vid});
+          document.getElementById('pKmOld').value=r.kmOld!=null?r.kmOld:''; kmHint(); }catch(_){}
+      };
+      setKindUI(); kmHint();
+      document.getElementById('pSave').onclick=()=>savePump(e, el);
+      document.getElementById('pSubmit').onclick=()=>submitPumpDay(el);
+      const c=document.getElementById('pCancel'); if(c) c.onclick=()=>{ state.pumpEdit=null; renderPumpUI(el); };
+      renderPumpList();
+      if(e) renderPhotoSection(e.id, e.vehicleId);
+    }
+
+    function vehHasOdo(vehicleId){
+      const v=((state.active&&state.active.vehicles)||[]).find(x=>x.id===vehicleId);
+      return !v || v.hasOdometer;  // mặc định coi là có công-tơ-mét nếu không rõ
+    }
+    async function signedUrl(path){
+      try{ const {data}=await sb.storage.from('chung-tu').createSignedUrl(path,300); return (data&&data.signedUrl)||''; }
+      catch(_){ return ''; }
+    }
+    const KIND_LABEL={ pump_meter:'Ảnh đồng hồ bơm', odometer:'Ảnh công-tơ-mét' };
+    async function renderPhotoSection(ledgerId, vehicleId){
+      const box=document.getElementById('photoBox'); if(!box) return;
+      let photos=[];
+      try{ photos=(await call('rpc_pump_photo_list',{p_ledger_id:ledgerId})).rows||[]; }
+      catch(err){ box.innerHTML=`<span class="msg">${esc(err.message)}</span>`; return; }
+      const slots=[['pump_meter',true]];
+      if(vehHasOdo(vehicleId)) slots.push(['odometer',true]);
+      const parts=[];
+      for(const [kind] of slots){
+        const p=photos.find(x=>x.kind===kind);
+        if(p){
+          const url=await signedUrl(p.path);
+          parts.push(`<div style="flex:1;min-width:160px"><label>${KIND_LABEL[kind]}</label>
+            ${url?`<a href="${esc(url)}" target="_blank"><img class="thumb" src="${esc(url)}"></a>`:'<div class="muted">Đã có ảnh.</div>'}
+            <div style="margin-top:6px"><button class="ghost sm" data-delphoto="${p.id}">Xóa ảnh</button></div></div>`);
+        }else{
+          parts.push(`<div style="flex:1;min-width:160px"><label>${KIND_LABEL[kind]} <span style="color:var(--danger)">*</span></label>
+            <input type="file" accept="image/*" capture="environment" data-kind="${kind}"></div>`);
+        }
+      }
+      box.innerHTML=`<div class="row">${parts.join('')}</div><div id="photoMsg" class="msg"></div>`;
+      box.querySelectorAll('input[type=file]').forEach(inp=> inp.onchange=()=>uploadPhoto(ledgerId, vehicleId, inp.dataset.kind, inp.files[0]));
+      box.querySelectorAll('[data-delphoto]').forEach(b=> b.onclick=()=>deletePhoto(ledgerId, vehicleId, b.dataset.delphoto));
+    }
+    async function uploadPhoto(ledgerId, vehicleId, kind, file){
+      if(!file) return;
+      const msg=document.getElementById('photoMsg'); if(msg){ msg.style.color='var(--muted)'; msg.textContent='Đang tải ảnh…'; }
+      try{
+        const ext=((file.name||'').split('.').pop()||'jpg').toLowerCase().replace(/[^a-z0-9]/g,'')||'jpg';
+        const path=`${ledgerId}/${kind}-${Date.now()}.${ext}`;
+        const {error}=await sb.storage.from('chung-tu').upload(path, file, {contentType:file.type||'image/jpeg', upsert:false});
+        if(error) throw error;
+        await call('rpc_pump_photo_add',{p_ledger_id:ledgerId, p_kind:kind, p_path:path});
+        toast('Đã thêm ảnh.'); renderPhotoSection(ledgerId, vehicleId);
+      }catch(err){ if(msg){ msg.style.color='var(--danger)'; msg.textContent=err.message||'Tải ảnh thất bại.'; } }
+    }
+    async function deletePhoto(ledgerId, vehicleId, photoId){
+      if(!confirm('Xóa ảnh này?')) return;
+      try{
+        const r=await call('rpc_pump_photo_delete',{p_id:photoId});
+        if(r&&r.path){ try{ await sb.storage.from('chung-tu').remove([r.path]); }catch(_){} }
+        toast('Đã xóa ảnh.'); renderPhotoSection(ledgerId, vehicleId);
+      }catch(err){ toast(err.message); }
+    }
+
+    function pumpParams(e){
+      const kOpt=document.getElementById('pTxn').selectedOptions[0];
+      const kind=kOpt?kOpt.dataset.kind:'';
+      const p={ p_vehicle_id:val('pVeh')||null, p_txn_type_id:val('pTxn')||null, p_oil_type_id:val('pOil')||null,
+        p_liters:num(val('pLit')), p_tank_id: kind==='bom_ngoai'?null:(val('pTank')||null),
+        p_km_new:val('pKmNew')?num(val('pKmNew')):null, p_km_old:val('pKmOld')?num(val('pKmOld')):null,
+        p_supplier_id: kind==='bom_ngoai'?(val('pSup')||null):null, p_note:val('pNote') };
+      if(e) p.p_id=e.id;
+      return p;
+    }
+    async function savePump(e, el){
+      const msg=document.getElementById('pMsg'); msg.textContent='';
+      try{
+        const res=await call(e?'rpc_pump_update':'rpc_pump_create', pumpParams(e));
+        toast(e?'Đã lưu phiếu.':'Đã thêm phiếu. Bổ sung ảnh chứng từ.');
+        state.pumpEdit=(e&&e.id)||(res&&res.id)||null;  // ở lại chế độ sửa để đính ảnh
+        await loadPumpMine(); renderPumpUI(el);
+        if(state.pumpEdit) window.scrollTo(0,0);
+      }catch(err){ msg.textContent=err.message; }
+    }
+    async function submitPumpDay(el){
+      if(!confirm('Submit toàn bộ phiếu Nháp để chuyển sang Chờ đối chiếu?')) return;
+      try{ const r=await call('rpc_pump_submit_day'); toast(`Đã submit ${r.count} phiếu.`);
+        await loadPumpMine(); renderPumpUI(el); }
+      catch(err){ toast(err.message); }
+    }
+    function renderPumpList(){
+      const box=document.getElementById('pList'); const rows=state.pumpMine||[];
+      if(!rows.length){ box.innerHTML='<span class="muted">Chưa có phiếu.</span>'; return; }
+      box.innerHTML=`<table><thead><tr><th>Số phiếu</th><th>Xe</th><th>Loại GD</th><th>Téc</th>
+        <th>Lít</th><th>KM đi</th><th>Trạng thái</th><th></th></tr></thead><tbody>
+        ${rows.map(r=>`<tr>
+          <td>${r.code?esc(r.code):'<span class="muted">(nháp)</span>'}${r.rejectReason?`<div class="msg" style="min-height:0">Trả về: ${esc(r.rejectReason)}</div>`:''}</td>
+          <td>${esc(r.plate||'')}</td><td>${esc(r.txnName||'')}</td><td>${esc(r.tankName||'')}</td>
+          <td>${fmtNum(r.liters)}</td><td>${r.kmRun!=null?fmtNum(r.kmRun):''}</td>
+          <td><span class="badge">${STATUS_LABEL[r.status]||esc(r.status)}</span></td>
+          <td style="white-space:nowrap">${r.status==='Nhap'
+            ? `<button class="ghost sm" data-edit="${r.id}">Sửa</button><button class="ghost sm" data-del="${r.id}">Xóa</button>`
+            : `<button class="ghost sm" data-withdraw="${r.id}">Rút lại</button>`}</td>
+        </tr>`).join('')}</tbody></table>`;
+      const el=document.getElementById('screen');
+      box.querySelectorAll('[data-edit]').forEach(b=> b.onclick=()=>{ state.pumpEdit=b.dataset.edit; renderPumpUI(el); window.scrollTo(0,0); });
+      box.querySelectorAll('[data-del]').forEach(b=> b.onclick=()=>delPump(b.dataset.del, el));
+      box.querySelectorAll('[data-withdraw]').forEach(b=> b.onclick=()=>withdrawPump(b.dataset.withdraw, el));
+    }
+    async function delPump(id, el){
+      if(!confirm('Xóa phiếu nháp này?')) return;
+      try{ await call('rpc_pump_delete',{p_id:id}); toast('Đã xóa.'); await loadPumpMine(); renderPumpUI(el); }
+      catch(err){ toast(err.message); }
+    }
+    async function withdrawPump(id, el){
+      try{ await call('rpc_pump_withdraw',{p_id:id}); toast('Đã rút lại về nháp.'); await loadPumpMine(); renderPumpUI(el); }
+      catch(err){ toast(err.message); }
+    }
+
+    // ---- Màn Đối chiếu chéo (ThuKho khác người tạo) ----
+    async function renderReview(el){
+      el.innerHTML='<div class="panel muted">Đang tải…</div>';
+      try{ const rows=(await call('rpc_pump_review_queue')).rows||[];
+        el.innerHTML=`<div class="panel"><h2>Hàng đợi đối chiếu</h2>
+          ${rows.length?`<table><thead><tr><th>Số phiếu</th><th>Người tạo</th><th>Xe</th><th>Loại GD</th>
+            <th>Téc</th><th>Lít</th><th>KM đi</th><th></th></tr></thead><tbody>
+            ${rows.map(r=>`<tr><td>${esc(r.code||'')}</td><td>${esc(r.createdBy||'')}</td>
+              <td>${esc(r.plate||'')}</td><td>${esc(r.txnName||'')}</td><td>${esc(r.tankName||'')}</td>
+              <td>${fmtNum(r.liters)}</td><td>${r.kmRun!=null?fmtNum(r.kmRun):''}</td>
+              <td style="white-space:nowrap">
+                <button class="ghost sm" data-photos="${r.id}">Ảnh</button>
+                <button class="sm" data-ok="${r.id}" style="background:var(--ok)">Khớp</button>
+                <button class="ghost sm" data-no="${r.id}">Lệch</button></td></tr>`).join('')}
+            </tbody></table>`:'<span class="muted">Không có phiếu chờ đối chiếu.</span>'}</div>`;
+        el.querySelectorAll('[data-photos]').forEach(b=> b.onclick=()=>viewPhotos(b.dataset.photos));
+        el.querySelectorAll('[data-ok]').forEach(b=> b.onclick=()=>reviewPump('rpc_pump_approve',{p_id:b.dataset.ok},el));
+        el.querySelectorAll('[data-no]').forEach(b=> b.onclick=()=>{
+          const reason=(prompt('Lý do trả về (Lệch):','')||'').trim(); if(!reason) return;
+          reviewPump('rpc_pump_reject',{p_id:b.dataset.no,p_reason:reason},el);
+        });
+      }catch(err){ el.innerHTML=`<div class="panel"><span class="msg">${esc(err.message)}</span></div>`; }
+    }
+    async function reviewPump(rpc, params, el){
+      try{ await call(rpc, params); toast('Đã xử lý phiếu.'); renderReview(el); }
+      catch(err){ toast(err.message); }
+    }
+    async function viewPhotos(ledgerId){
+      let rows=[];
+      try{ rows=(await call('rpc_pump_photo_list',{p_ledger_id:ledgerId})).rows||[]; }
+      catch(err){ toast(err.message); return; }
+      if(!rows.length){ toast('Phiếu chưa có ảnh.'); return; }
+      showModal('Ảnh chứng từ', '<div class="muted">Đang tải ảnh…</div>');
+      const parts=[];
+      for(const p of rows){
+        const url=await signedUrl(p.path);
+        parts.push(`<div style="flex:1;min-width:200px"><label>${KIND_LABEL[p.kind]||esc(p.kind)}</label>
+          ${url?`<a href="${esc(url)}" target="_blank"><img class="thumb" style="max-height:none" src="${esc(url)}"></a>`:'<span class="muted">Không tải được ảnh.</span>'}</div>`);
+      }
+      showModal('Ảnh chứng từ', `<div class="row">${parts.join('')}</div>`);
+    }
+    function showModal(title, html){
+      const m=document.getElementById('modal');
+      m.innerHTML=`<div class="modalCard"><div class="row" style="align-items:center;margin-bottom:8px">
+        <h2 style="flex:1;margin:0">${esc(title)}</h2>
+        <button class="ghost sm" id="modalClose" style="flex:0">Đóng</button></div>
+        <div>${html}</div></div>`;
+      m.style.display='flex';
+      m.onclick=(ev)=>{ if(ev.target===m) closeModal(); };
+      document.getElementById('modalClose').onclick=closeModal;
+    }
+    function closeModal(){ const m=document.getElementById('modal'); m.style.display='none'; m.innerHTML=''; }
 
     document.getElementById('loginBtn').onclick=login;
     document.getElementById('logoutBtn').onclick=logout;
