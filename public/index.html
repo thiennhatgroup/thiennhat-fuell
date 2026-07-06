@@ -183,6 +183,7 @@
       if(state.screen==='nhap') return renderNhap(el);
       if(state.screen==='nhapReview') return renderNhapReview(el);
       if(state.screen==='inventory') return renderInventory(el);
+      if(state.screen==='adjust') return renderAdjust(el);
       // Placeholder cho các slice chưa build
       el.innerHTML=`<div class="panel soon"><div class="big">🛠️</div>
         <h2>${esc(scr[1])}</h2>
@@ -960,6 +961,93 @@
           p_as_of_date:val('opDate')||null, p_note:null });
         toast('Đã lưu tồn đầu.'); renderInventory(el);
       }catch(err){ msg.textContent=err.message; }
+    }
+
+    // ---- Màn Tịnh téc / Kiểm kê (Kế toán) ----
+    const PERIOD_KIND={ tinh_tec:'Tịnh téc', kiem_ke:'Kiểm kê' };
+    async function renderAdjust(el){
+      el.innerHTML='<div class="panel muted">Đang tải…</div>';
+      try{ await ensureActive(); state.periods=(await call('rpc_stock_period_list')).rows||[]; renderAdjustUI(el); }
+      catch(err){ el.innerHTML=`<div class="panel"><span class="msg">${esc(err.message)}</span></div>`; }
+    }
+    function renderAdjustUI(el){
+      const a=state.active, tanks=a.tanks||[], rows=state.periods||[];
+      const opt=arr=>arr.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('');
+      const today=new Date().toISOString().slice(0,10);
+      el.innerHTML=`<div class="panel"><h2>Kỳ điều chỉnh tồn mới</h2>
+        <p class="muted" style="margin-top:-6px">Tịnh téc (khi téc cạn) hoặc Kiểm kê (giữa chừng). Chốt kỳ để sinh tịnh âm/dương và phân bổ cho xe.</p>
+        <div class="row">
+          <div><label>Téc</label><select id="spTank"><option value="">— chọn téc —</option>${opt(tanks)}</select></div>
+          <div><label>Loại kỳ</label><select id="spKind">
+            <option value="tinh_tec">Tịnh téc (téc cạn)</option>
+            <option value="kiem_ke">Kiểm kê (giữa chừng)</option></select></div>
+        </div>
+        <div class="row">
+          <div><label>Ngày bắt đầu</label><input id="spStart" type="date" value="${today}"></div>
+          <div><label>Ghi chú</label><input id="spNote"></div>
+        </div>
+        <div style="margin-top:12px"><button id="spCreate" style="flex:0">Tạo kỳ</button></div>
+        <div id="spMsg" class="msg"></div>
+      </div>
+      <div class="panel"><h2>Các kỳ</h2><div id="spList" style="margin-top:8px"></div></div>`;
+      document.getElementById('spCreate').onclick=()=>createPeriod(el);
+      renderPeriodList(el);
+    }
+    function renderPeriodList(el){
+      const box=document.getElementById('spList'); const rows=state.periods||[];
+      if(!rows.length){ box.innerHTML='<span class="muted">Chưa có kỳ nào.</span>'; return; }
+      box.innerHTML=`<table><thead><tr><th>Số kỳ</th><th>Téc</th><th>Loại</th><th>Bắt đầu</th><th>Chốt</th>
+        <th>Thực tế</th><th>Tồn sổ</th><th>Tịnh âm</th><th>Tịnh dương</th><th>Trạng thái</th><th></th></tr></thead><tbody>
+        ${rows.map(r=>`<tr>
+          <td>${r.code?esc(r.code):'<span class="muted">(mở)</span>'}</td>
+          <td>${esc(r.tankName||'')}</td><td>${esc(PERIOD_KIND[r.kind]||r.kind)}</td>
+          <td>${esc(r.startDate||'')}</td><td>${esc(r.closeDate||'')}</td>
+          <td>${fmtNum(r.actual)}</td><td>${fmtNum(r.book)}</td>
+          <td${Number(r.tinhAm)>0?' style="color:var(--danger)"':''}>${fmtNum(r.tinhAm)}</td>
+          <td${Number(r.tinhDuong)>0?' style="color:var(--ok)"':''}>${fmtNum(r.tinhDuong)}</td>
+          <td><span class="badge">${r.status==='DaChot'?'Đã chốt':'Đang mở'}</span></td>
+          <td style="white-space:nowrap">${r.status==='Mo'
+            ? `<button class="sm" data-close="${r.id}" style="flex:0">Chốt</button><button class="ghost sm" data-pdel="${r.id}">Xóa</button>`
+            : `<button class="ghost sm" data-palloc="${r.id}">Phân bổ</button>`}</td>
+        </tr>`).join('')}</tbody></table>`;
+      box.querySelectorAll('[data-close]').forEach(b=> b.onclick=()=>closePeriod(b.dataset.close, el));
+      box.querySelectorAll('[data-pdel]').forEach(b=> b.onclick=()=>deletePeriod(b.dataset.pdel, el));
+      box.querySelectorAll('[data-palloc]').forEach(b=> b.onclick=()=>viewAlloc(b.dataset.palloc));
+    }
+    async function createPeriod(el){
+      const msg=document.getElementById('spMsg'); msg.textContent='';
+      if(!val('spTank')){ msg.textContent='Chọn téc.'; return; }
+      try{
+        await call('rpc_stock_period_create',{ p_tank_id:val('spTank'), p_kind:val('spKind'),
+          p_start_date:val('spStart')||null, p_note:val('spNote') });
+        toast('Đã tạo kỳ.'); state.periods=(await call('rpc_stock_period_list')).rows||[]; renderAdjustUI(el);
+      }catch(err){ msg.textContent=err.message; }
+    }
+    async function closePeriod(id, el){
+      const s=prompt('Nhập Tồn thực tế đo tay (lít) để chốt kỳ:',''); if(s===null) return;
+      const actual=num(s);
+      if(!confirm(`Chốt kỳ với tồn thực tế ${fmtNum(actual)} lít? Không thể sửa sau khi chốt.`)) return;
+      try{ const r=await call('rpc_stock_period_close',{ p_id:id, p_actual_liters:actual });
+        toast(`Đã chốt. Tịnh âm ${fmtNum(r.tinhAm)}, tịnh dương ${fmtNum(r.tinhDuong)}.`);
+        state.periods=(await call('rpc_stock_period_list')).rows||[]; renderAdjustUI(el);
+      }catch(err){ toast(err.message); }
+    }
+    async function deletePeriod(id, el){
+      if(!confirm('Xóa kỳ đang mở này?')) return;
+      try{ await call('rpc_stock_period_delete',{p_id:id}); toast('Đã xóa.');
+        state.periods=(await call('rpc_stock_period_list')).rows||[]; renderAdjustUI(el);
+      }catch(err){ toast(err.message); }
+    }
+    async function viewAlloc(id){
+      let rows=[];
+      try{ rows=(await call('rpc_stock_period_detail',{p_id:id})).rows||[]; }
+      catch(err){ toast(err.message); return; }
+      const body = rows.length
+        ? `<table><thead><tr><th>Xe</th><th>Lít trong kỳ</th><th>Tịnh âm PB</th><th>Tịnh dương PB</th></tr></thead><tbody>
+            ${rows.map(r=>`<tr><td>${esc(r.plate||'')}</td><td>${fmtNum(r.litersInPeriod)}</td>
+              <td>${fmtNum(r.tinhAm)}</td><td>${fmtNum(r.tinhDuong)}</td></tr>`).join('')}</tbody></table>`
+        : '<span class="muted">Kỳ này không có xe bơm trong kỳ (không phân bổ).</span>';
+      showModal('Phân bổ tịnh cho xe', body);
     }
 
     document.getElementById('loginBtn').onclick=login;
