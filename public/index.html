@@ -100,7 +100,9 @@
     const SCREENS = [
       ['home',      'Trang chủ',        null,             ''],
       ['pump',      'Nhập bơm',         'pump:create',    'S2'],
-      ['review',    'Đối chiếu chéo',   'pump:review',    'S2'],
+      ['review',    'Đối chiếu bơm',    'pump:review',    'S2'],
+      ['nhap',      'Phiếu nhập',       'pump:create',    'S4'],
+      ['nhapReview','Đối chiếu nhập',   'pump:review',    'S4'],
       ['inventory', 'Tồn kho',          'inventory:read', 'S5'],
       ['adjust',    'Tịnh téc / Kiểm kê','adjust:manage',  'S6'],
       ['report',    'Báo cáo tháng',    'report:read',    'S8'],
@@ -178,6 +180,8 @@
       if(state.screen==='catalog') return renderCatalog(el);
       if(state.screen==='pump') return renderPump(el);
       if(state.screen==='review') return renderReview(el);
+      if(state.screen==='nhap') return renderNhap(el);
+      if(state.screen==='nhapReview') return renderNhapReview(el);
       // Placeholder cho các slice chưa build
       el.innerHTML=`<div class="panel soon"><div class="big">🛠️</div>
         <h2>${esc(scr[1])}</h2>
@@ -696,6 +700,199 @@
       document.getElementById('modalClose').onclick=closeModal;
     }
     function closeModal(){ const m=document.getElementById('modal'); m.style.display='none'; m.innerHTML=''; }
+
+    // ---- Màn Phiếu nhập (ThuKho) — nhập dầu về téc ----
+    async function renderNhap(el){
+      el.innerHTML='<div class="panel muted">Đang tải…</div>';
+      try{ await ensureActive(); await loadNhapMine(); renderNhapUI(el); }
+      catch(err){ el.innerHTML=`<div class="panel"><span class="msg">${esc(err.message)}</span></div>`; }
+    }
+    async function loadNhapMine(){ state.nhapMine=(await call('rpc_nhap_list_mine')).rows||[]; }
+
+    function renderNhapUI(el){
+      const a=state.active, e=(state.nhapEdit&&state.nhapMine.find(r=>r.id===state.nhapEdit&&r.status==='Nhap'))||null;
+      const tanks=a.tanks||[], oils=a.oilTypes||[], sups=a.suppliers||[];
+      const sel=(id,v)=>v&&v===id?'selected':'';
+      const opt=(arr,idKey,labelKey,cur)=>arr.map(x=>`<option value="${x[idKey]}" ${sel(x[idKey],cur)}>${esc(x[labelKey])}</option>`).join('');
+      el.innerHTML=`<div class="panel"><h2>${e?`Sửa phiếu ${e.code?esc(e.code):'nháp'}`:'Phiếu nhập mới'}</h2>
+        <div class="row">
+          <div><label>Nhà cung cấp</label><select id="nSup"><option value="">— chọn NCC —</option>${opt(sups,'id','name',e&&e.supplierId)}</select></div>
+          <div><label>Téc nhận</label><select id="nTank"><option value="">— chọn téc —</option>${opt(tanks,'id','name',e&&e.tankId)}</select></div>
+        </div>
+        <div class="row">
+          <div><label>Loại dầu</label><select id="nOil"><option value="">— chọn loại dầu —</option>${opt(oils,'id','name',e&&e.oilTypeId)}</select></div>
+          <div><label>Số HĐ NCC</label><input id="nInv" value="${e&&e.supplierInvoiceNo?esc(e.supplierInvoiceNo):''}" placeholder="Số hóa đơn nhà cung cấp"></div>
+        </div>
+        <div class="row">
+          <div><label>Số lít</label><input id="nLit" inputmode="decimal" value="${e?esc(e.liters):''}"></div>
+          <div><label>Đơn giá</label><input id="nPrice" inputmode="decimal" value="${e&&e.unitPrice!=null?esc(e.unitPrice):''}"></div>
+          <div><label>Thành tiền (tự tính)</label><input id="nAmount" readonly
+            style="background:var(--bg);color:var(--muted)" value="${e&&e.amount!=null?fmtNum(e.amount):''}"></div>
+        </div>
+        <label>Ghi chú</label><input id="nNote" value="${e&&e.note?esc(e.note):''}">
+        <div class="row" style="margin-top:12px;flex:0">
+          <button id="nSave" style="flex:0">${e?'Lưu':'Thêm phiếu'}</button>
+          ${e?'<button class="ghost" id="nCancel" style="flex:0">Hủy</button>':''}
+        </div><div id="nMsg" class="msg"></div>
+      </div>
+      ${e?`<div class="panel"><h2>Ảnh chứng từ</h2>
+        <p class="muted" style="margin-top:-6px">Bắt buộc ≥1 ảnh phiếu nhập. Chụp trước khi Submit ngày.</p>
+        <div id="nPhotoBox" class="muted">Đang tải ảnh…</div></div>`:''}
+      <div class="panel"><div class="row" style="align-items:center"><h2 style="flex:1;margin:0">Phiếu của tôi</h2>
+        <button id="nSubmit" class="sm" style="flex:0">Submit ngày</button></div>
+        <div id="nList" style="margin-top:12px"></div></div>`;
+
+      const recalc=()=>{ const amt=num(val('nLit'))*num(val('nPrice')); document.getElementById('nAmount').value = amt>0?fmtNum(Math.round(amt*100)/100):''; };
+      // Chọn téc → gợi ý loại dầu của téc nếu chưa chọn.
+      document.getElementById('nTank').onchange=(ev)=>{
+        const t=(a.tanks||[]).find(x=>x.id===ev.target.value);
+        const oilSel=document.getElementById('nOil');
+        if(t&&t.oilTypeId&&!oilSel.value) oilSel.value=t.oilTypeId;
+      };
+      document.getElementById('nLit').oninput=recalc;
+      document.getElementById('nPrice').oninput=recalc;
+      recalc();
+      document.getElementById('nSave').onclick=()=>saveNhap(e, el);
+      document.getElementById('nSubmit').onclick=()=>submitNhapDay(el);
+      const c=document.getElementById('nCancel'); if(c) c.onclick=()=>{ state.nhapEdit=null; renderNhapUI(el); };
+      renderNhapList();
+      if(e) renderReceiptSection(e.id);
+    }
+
+    async function renderReceiptSection(ledgerId){
+      const box=document.getElementById('nPhotoBox'); if(!box) return;
+      let photos=[];
+      try{ photos=(await call('rpc_nhap_photo_list',{p_ledger_id:ledgerId})).rows||[]; }
+      catch(err){ box.innerHTML=`<span class="msg">${esc(err.message)}</span>`; return; }
+      const parts=photos.map(p=>`<div style="flex:1;min-width:160px" data-slot="${p.id}"><label>Ảnh phiếu nhập</label>
+        <span class="muted">Đang tải…</span></div>`);
+      parts.push(`<div style="flex:1;min-width:160px"><label>Thêm ảnh phiếu nhập ${photos.length?'':'<span style="color:var(--danger)">*</span>'}</label>
+        <input type="file" accept="image/*" capture="environment" id="nPhotoInput"></div>`);
+      box.innerHTML=`<div class="row">${parts.join('')}</div><div id="nPhotoMsg" class="msg"></div>`;
+      for(const p of photos){
+        const slot=box.querySelector(`[data-slot="${p.id}"]`); if(!slot) continue;
+        const url=await signedUrl(p.path);
+        slot.innerHTML=`<label>Ảnh phiếu nhập</label>
+          ${url?`<a href="${esc(url)}" target="_blank"><img class="thumb" src="${esc(url)}"></a>`:'<div class="muted">Đã có ảnh.</div>'}
+          <div style="margin-top:6px"><button class="ghost sm" data-delreceipt="${p.id}">Xóa ảnh</button></div>`;
+      }
+      const inp=document.getElementById('nPhotoInput'); if(inp) inp.onchange=()=>uploadReceipt(ledgerId, inp.files[0]);
+      box.querySelectorAll('[data-delreceipt]').forEach(b=> b.onclick=()=>deleteReceipt(ledgerId, b.dataset.delreceipt));
+    }
+    async function uploadReceipt(ledgerId, file){
+      if(!file) return;
+      const msg=document.getElementById('nPhotoMsg'); if(msg){ msg.style.color='var(--muted)'; msg.textContent='Đang tải ảnh…'; }
+      try{
+        const ext=((file.name||'').split('.').pop()||'jpg').toLowerCase().replace(/[^a-z0-9]/g,'')||'jpg';
+        const path=`${ledgerId}/receipt-${Date.now()}.${ext}`;
+        const {error}=await sb.storage.from('chung-tu').upload(path, file, {contentType:file.type||'image/jpeg', upsert:false});
+        if(error) throw error;
+        await call('rpc_nhap_photo_add',{p_ledger_id:ledgerId, p_path:path});
+        toast('Đã thêm ảnh.'); renderReceiptSection(ledgerId);
+      }catch(err){ if(msg){ msg.style.color='var(--danger)'; msg.textContent=err.message||'Tải ảnh thất bại.'; } }
+    }
+    async function deleteReceipt(ledgerId, photoId){
+      if(!confirm('Xóa ảnh này?')) return;
+      try{
+        const r=await call('rpc_nhap_photo_delete',{p_id:photoId});
+        if(r&&r.path){ try{ await sb.storage.from('chung-tu').remove([r.path]); }catch(_){} }
+        toast('Đã xóa ảnh.'); renderReceiptSection(ledgerId);
+      }catch(err){ toast(err.message); }
+    }
+
+    function nhapParams(e){
+      const p={ p_supplier_id:val('nSup')||null, p_tank_id:val('nTank')||null, p_oil_type_id:val('nOil')||null,
+        p_liters:num(val('nLit')), p_unit_price:num(val('nPrice')),
+        p_supplier_invoice_no:val('nInv'), p_note:val('nNote') };
+      if(e) p.p_id=e.id;
+      return p;
+    }
+    async function saveNhap(e, el){
+      const msg=document.getElementById('nMsg'); msg.textContent='';
+      try{
+        const res=await call(e?'rpc_nhap_update':'rpc_nhap_create', nhapParams(e));
+        toast(e?'Đã lưu phiếu.':'Đã thêm phiếu. Bổ sung ảnh phiếu nhập.');
+        state.nhapEdit=(e&&e.id)||(res&&res.id)||null;  // ở lại chế độ sửa để đính ảnh
+        await loadNhapMine(); renderNhapUI(el);
+        if(state.nhapEdit) window.scrollTo(0,0);
+      }catch(err){ msg.textContent=err.message; }
+    }
+    async function submitNhapDay(el){
+      if(!confirm('Submit toàn bộ phiếu nhập Nháp để chuyển sang Chờ đối chiếu?')) return;
+      try{ const r=await call('rpc_nhap_submit_day'); toast(`Đã submit ${r.count} phiếu.`);
+        await loadNhapMine(); renderNhapUI(el); }
+      catch(err){ toast(err.message); }
+    }
+    function renderNhapList(){
+      const box=document.getElementById('nList'); const rows=state.nhapMine||[];
+      if(!rows.length){ box.innerHTML='<span class="muted">Chưa có phiếu.</span>'; return; }
+      box.innerHTML=`<table><thead><tr><th>Số phiếu</th><th>NCC</th><th>Téc</th><th>Loại dầu</th>
+        <th>Lít</th><th>Đơn giá</th><th>Thành tiền</th><th>Trạng thái</th><th></th></tr></thead><tbody>
+        ${rows.map(r=>`<tr>
+          <td>${r.code?esc(r.code):'<span class="muted">(nháp)</span>'}${r.rejectReason?`<div class="msg" style="min-height:0">Trả về: ${esc(r.rejectReason)}</div>`:''}${r.supplierInvoiceNo?`<div class="muted" style="font-size:12px">HĐ: ${esc(r.supplierInvoiceNo)}</div>`:''}</td>
+          <td>${esc(r.supplierName||'')}</td><td>${esc(r.tankName||'')}</td><td>${esc(r.oilTypeName||'')}</td>
+          <td>${fmtNum(r.liters)}</td><td>${fmtNum(r.unitPrice)}</td><td>${fmtNum(r.amount)}</td>
+          <td><span class="badge">${STATUS_LABEL[r.status]||esc(r.status)}</span></td>
+          <td style="white-space:nowrap">${r.status==='Nhap'
+            ? `<button class="ghost sm" data-nedit="${r.id}">Sửa</button><button class="ghost sm" data-ndel="${r.id}">Xóa</button>`
+            : `<button class="ghost sm" data-nwithdraw="${r.id}">Rút lại</button>`}</td>
+        </tr>`).join('')}</tbody></table>`;
+      const el=document.getElementById('screen');
+      box.querySelectorAll('[data-nedit]').forEach(b=> b.onclick=()=>{ state.nhapEdit=b.dataset.nedit; renderNhapUI(el); window.scrollTo(0,0); });
+      box.querySelectorAll('[data-ndel]').forEach(b=> b.onclick=()=>delNhap(b.dataset.ndel, el));
+      box.querySelectorAll('[data-nwithdraw]').forEach(b=> b.onclick=()=>withdrawNhap(b.dataset.nwithdraw, el));
+    }
+    async function delNhap(id, el){
+      if(!confirm('Xóa phiếu nháp này?')) return;
+      try{ await call('rpc_nhap_delete',{p_id:id}); toast('Đã xóa.'); await loadNhapMine(); renderNhapUI(el); }
+      catch(err){ toast(err.message); }
+    }
+    async function withdrawNhap(id, el){
+      try{ await call('rpc_nhap_withdraw',{p_id:id}); toast('Đã rút lại về nháp.'); await loadNhapMine(); renderNhapUI(el); }
+      catch(err){ toast(err.message); }
+    }
+
+    // ---- Màn Đối chiếu nhập (ThuKho khác người tạo) ----
+    async function renderNhapReview(el){
+      el.innerHTML='<div class="panel muted">Đang tải…</div>';
+      try{ const rows=(await call('rpc_nhap_review_queue')).rows||[];
+        el.innerHTML=`<div class="panel"><h2>Hàng đợi đối chiếu nhập</h2>
+          ${rows.length?`<table><thead><tr><th>Số phiếu</th><th>Người tạo</th><th>NCC</th><th>Téc</th>
+            <th>Loại dầu</th><th>Lít</th><th>Đơn giá</th><th>Thành tiền</th><th></th></tr></thead><tbody>
+            ${rows.map(r=>`<tr><td>${esc(r.code||'')}${r.supplierInvoiceNo?`<div class="muted" style="font-size:12px">HĐ: ${esc(r.supplierInvoiceNo)}</div>`:''}</td>
+              <td>${esc(r.createdBy||'')}</td><td>${esc(r.supplierName||'')}</td><td>${esc(r.tankName||'')}</td>
+              <td>${esc(r.oilTypeName||'')}</td><td>${fmtNum(r.liters)}</td><td>${fmtNum(r.unitPrice)}</td><td>${fmtNum(r.amount)}</td>
+              <td style="white-space:nowrap">
+                <button class="ghost sm" data-nphotos="${r.id}">Ảnh</button>
+                <button class="sm" data-nok="${r.id}" style="background:var(--ok)">Khớp</button>
+                <button class="ghost sm" data-nno="${r.id}">Lệch</button></td></tr>`).join('')}
+            </tbody></table>`:'<span class="muted">Không có phiếu chờ đối chiếu.</span>'}</div>`;
+        el.querySelectorAll('[data-nphotos]').forEach(b=> b.onclick=()=>viewReceiptPhotos(b.dataset.nphotos));
+        el.querySelectorAll('[data-nok]').forEach(b=> b.onclick=()=>reviewNhap('rpc_nhap_approve',{p_id:b.dataset.nok},el));
+        el.querySelectorAll('[data-nno]').forEach(b=> b.onclick=()=>{
+          const reason=(prompt('Lý do trả về (Lệch):','')||'').trim(); if(!reason) return;
+          reviewNhap('rpc_nhap_reject',{p_id:b.dataset.nno,p_reason:reason},el);
+        });
+      }catch(err){ el.innerHTML=`<div class="panel"><span class="msg">${esc(err.message)}</span></div>`; }
+    }
+    async function reviewNhap(rpc, params, el){
+      try{ await call(rpc, params); toast('Đã xử lý phiếu.'); renderNhapReview(el); }
+      catch(err){ toast(err.message); }
+    }
+    async function viewReceiptPhotos(ledgerId){
+      let rows=[];
+      try{ rows=(await call('rpc_nhap_photo_list',{p_ledger_id:ledgerId})).rows||[]; }
+      catch(err){ toast(err.message); return; }
+      if(!rows.length){ toast('Phiếu chưa có ảnh.'); return; }
+      showModal('Ảnh phiếu nhập', '<div class="muted">Đang tải ảnh…</div>');
+      const parts=[];
+      for(const p of rows){
+        const url=await signedUrl(p.path);
+        parts.push(`<div style="flex:1;min-width:200px"><label>Ảnh phiếu nhập</label>
+          ${url?`<a href="${esc(url)}" target="_blank"><img class="thumb" style="max-height:none" src="${esc(url)}"></a>`:'<span class="muted">Không tải được ảnh.</span>'}</div>`);
+      }
+      showModal('Ảnh phiếu nhập', `<div class="row">${parts.join('')}</div>`);
+    }
 
     document.getElementById('loginBtn').onclick=login;
     document.getElementById('logoutBtn').onclick=logout;
