@@ -170,6 +170,7 @@
       const scr=SCREENS.find(s=>s[0]===state.screen);
       if(state.screen==='home') return renderHome(el);
       if(state.screen==='users') return renderUsers(el);
+      if(state.screen==='catalog') return renderCatalog(el);
       // Placeholder cho các slice chưa build
       el.innerHTML=`<div class="panel soon"><div class="big">🛠️</div>
         <h2>${esc(scr[1])}</h2>
@@ -250,6 +251,190 @@
       const next = status==='Hoạt động' ? 'Ngừng' : 'Hoạt động';
       try{ await call('rpc_admin_update_user',{ p_id:id, p_status:next }); toast('Đã cập nhật.'); loadUsers(); }
       catch(err){ toast(err.message); }
+    }
+
+    // ---- Màn Danh mục & Xe (Kế toán / Admin) ----
+    const CAT_TABS = [
+      ['tanks',    'Téc'],
+      ['vehicles', 'Xe'],
+      ['oilTypes', 'Loại dầu'],
+      ['suppliers','Nhà cung cấp'],
+      ['txnTypes', 'Loại giao dịch']
+    ];
+    function num(v){ const n=parseFloat(String(v).replace(',','.')); return isNaN(n)?0:n; }
+    function fmtNum(v){ return (v==null||v==='')?'':Number(v).toLocaleString('vi-VN'); }
+
+    async function renderCatalog(el){
+      if(!state.catTab) state.catTab='tanks';
+      el.innerHTML=`<div class="nav" style="position:static;padding:0 0 12px;border:none" id="catNav"></div>
+        <div id="catBody" class="muted">Đang tải…</div>`;
+      const nav=document.getElementById('catNav');
+      nav.innerHTML=CAT_TABS.map(t=>`<button data-t="${t[0]}" class="${t[0]===state.catTab?'active':''}">${esc(t[1])}</button>`).join('');
+      nav.querySelectorAll('button').forEach(b=> b.onclick=()=>{ state.catTab=b.dataset.t; state.catEdit=null; renderCatalog(el); });
+      try{
+        state.catalog=await call('rpc_catalog_list');
+        renderCatTab();
+      }catch(err){ document.getElementById('catBody').innerHTML=`<span class="msg">${esc(err.message)}</span>`; }
+    }
+
+    function renderCatTab(){
+      const body=document.getElementById('catBody'); if(!body) return;
+      const tab=state.catTab;
+      if(tab==='tanks')     return renderTankTab(body);
+      if(tab==='vehicles')  return renderVehicleTab(body);
+      if(tab==='oilTypes')  return renderOilTypeTab(body);
+      if(tab==='suppliers') return renderSupplierTab(body);
+      if(tab==='txnTypes')  return renderTxnTypeTab(body);
+    }
+
+    function statusCell(active){ return active?'<span class="badge">Hoạt động</span>':'<span class="muted">Ngừng</span>'; }
+    function rowActions(kind, r){
+      return `<button class="ghost sm" data-edit="${r.id}">Sửa</button>
+        <button class="ghost sm" data-toggle="${r.id}" data-active="${r.active?1:0}">${r.active?'Ngừng':'Bật'}</button>`;
+    }
+    async function catToggle(kind, id, active){
+      try{ await call('rpc_catalog_toggle',{ p_kind:kind, p_id:id, p_active:!active }); toast('Đã cập nhật.');
+        state.catalog=await call('rpc_catalog_list'); renderCatTab(); }
+      catch(err){ toast(err.message); }
+    }
+    async function catSave(rpc, params, msgId){
+      const msg=document.getElementById(msgId); if(msg) msg.textContent='';
+      try{ await call(rpc, params); toast('Đã lưu.'); state.catEdit=null;
+        state.catalog=await call('rpc_catalog_list'); renderCatTab(); }
+      catch(err){ if(msg) msg.textContent=err.message; else toast(err.message); }
+    }
+
+    // --- Téc ---
+    function renderTankTab(body){
+      const rows=state.catalog.tanks||[], oils=state.catalog.oilTypes||[];
+      const e=(state.catEdit&&rows.find(r=>r.id===state.catEdit))||null;
+      const oilOpts=`<option value="">— chọn loại dầu —</option>`+oils.map(o=>`<option value="${o.id}" ${e&&e.oilTypeId===o.id?'selected':''}>${esc(o.name)}</option>`).join('');
+      body.innerHTML=`<div class="panel"><h2>${e?'Sửa téc':'Thêm téc'}</h2>
+        <div class="row">
+          <div><label>Tên téc</label><input id="tName" value="${e?esc(e.name):''}" placeholder="Téc 1"></div>
+          <div><label>Loại dầu</label><select id="tOil">${oilOpts}</select></div>
+        </div>
+        <div class="row">
+          <div><label>Sức chứa (lít)</label><input id="tCap" inputmode="decimal" value="${e?esc(e.capacity):''}"></div>
+          <div><label>Reorder point (lít)</label><input id="tReorder" inputmode="decimal" value="${e?esc(e.reorderPoint):''}"></div>
+          <div><label>Lead-time (ngày)</label><input id="tLead" inputmode="numeric" value="${e?esc(e.leadTimeDays):''}"></div>
+        </div>
+        <div class="row" style="margin-top:12px;flex:0">
+          <button id="tSave" style="flex:0">${e?'Lưu':'Thêm'}</button>
+          ${e?'<button class="ghost" id="tCancel" style="flex:0">Hủy</button>':''}
+        </div><div id="tMsg" class="msg"></div></div>
+        <div class="panel"><h2>Danh sách téc</h2>${rows.length?`<table><thead><tr>
+          <th>Tên</th><th>Loại dầu</th><th>Sức chứa</th><th>Reorder</th><th>Lead-time</th><th>Trạng thái</th><th></th></tr></thead><tbody>
+          ${rows.map(r=>`<tr><td>${esc(r.name)}</td><td>${esc(r.oilTypeName||'')}</td>
+            <td>${fmtNum(r.capacity)}</td><td>${fmtNum(r.reorderPoint)}</td><td>${esc(r.leadTimeDays)}</td>
+            <td>${statusCell(r.active)}</td><td style="white-space:nowrap">${rowActions('tank',r)}</td></tr>`).join('')}
+          </tbody></table>`:'<span class="muted">Chưa có téc.</span>'}</div>`;
+      document.getElementById('tSave').onclick=()=>catSave('rpc_tank_upsert',{
+        p_id:e?e.id:null, p_name:val('tName'), p_oil_type_id:val('tOil')||null,
+        p_capacity:num(val('tCap')), p_reorder:num(val('tReorder')),
+        p_lead_time_days:Math.round(num(val('tLead'))), p_active:e?e.active:true },'tMsg');
+      wireEditToggle(body,'tank');
+    }
+
+    // --- Xe ---
+    function renderVehicleTab(body){
+      const rows=state.catalog.vehicles||[];
+      const e=(state.catEdit&&rows.find(r=>r.id===state.catEdit))||null;
+      body.innerHTML=`<div class="panel"><h2>${e?'Sửa xe':'Thêm xe'}</h2>
+        <div class="row">
+          <div><label>Biển số</label><input id="vPlate" value="${e?esc(e.plate):''}" placeholder="51C-123.45"></div>
+          <div><label>Định mức bơm</label><input id="vNorm" inputmode="decimal" value="${e?esc(e.pumpNorm):''}"></div>
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;margin-top:12px">
+          <input type="checkbox" id="vOdo" style="width:auto;min-height:auto" ${(!e||e.hasOdometer)?'checked':''}> Có công-tơ-mét (đồng hồ KM)</label>
+        <div class="row" style="margin-top:12px;flex:0">
+          <button id="vSave" style="flex:0">${e?'Lưu':'Thêm'}</button>
+          ${e?'<button class="ghost" id="vCancel" style="flex:0">Hủy</button>':''}
+        </div><div id="vMsg" class="msg"></div></div>
+        <div class="panel"><h2>Danh sách xe</h2>${rows.length?`<table><thead><tr>
+          <th>Biển số</th><th>Định mức bơm</th><th>Công-tơ-mét</th><th>Trạng thái</th><th></th></tr></thead><tbody>
+          ${rows.map(r=>`<tr><td>${esc(r.plate)}</td><td>${fmtNum(r.pumpNorm)}</td>
+            <td>${r.hasOdometer?'Có':'Không'}</td><td>${statusCell(r.active)}</td>
+            <td style="white-space:nowrap">${rowActions('vehicle',r)}</td></tr>`).join('')}
+          </tbody></table>`:'<span class="muted">Chưa có xe.</span>'}</div>`;
+      document.getElementById('vSave').onclick=()=>catSave('rpc_vehicle_upsert',{
+        p_id:e?e.id:null, p_plate:val('vPlate'), p_pump_norm:num(val('vNorm')),
+        p_has_odometer:document.getElementById('vOdo').checked, p_active:e?e.active:true },'vMsg');
+      wireEditToggle(body,'vehicle');
+    }
+
+    // --- Loại dầu ---
+    function renderOilTypeTab(body){
+      const rows=state.catalog.oilTypes||[];
+      const e=(state.catEdit&&rows.find(r=>r.id===state.catEdit))||null;
+      body.innerHTML=`<div class="panel"><h2>${e?'Sửa loại dầu':'Thêm loại dầu'}</h2>
+        <div class="row"><div><label>Tên loại dầu</label><input id="oName" value="${e?esc(e.name):''}" placeholder="DO 0.05S"></div></div>
+        <div class="row" style="margin-top:12px;flex:0">
+          <button id="oSave" style="flex:0">${e?'Lưu':'Thêm'}</button>
+          ${e?'<button class="ghost" id="oCancel" style="flex:0">Hủy</button>':''}
+        </div><div id="oMsg" class="msg"></div></div>
+        <div class="panel"><h2>Danh sách loại dầu</h2>${rows.length?`<table><thead><tr>
+          <th>Tên</th><th>Trạng thái</th><th></th></tr></thead><tbody>
+          ${rows.map(r=>`<tr><td>${esc(r.name)}</td><td>${statusCell(r.active)}</td>
+            <td style="white-space:nowrap">${rowActions('oilType',r)}</td></tr>`).join('')}
+          </tbody></table>`:'<span class="muted">Chưa có loại dầu.</span>'}</div>`;
+      document.getElementById('oSave').onclick=()=>catSave('rpc_oil_type_upsert',{
+        p_id:e?e.id:null, p_name:val('oName'), p_active:e?e.active:true },'oMsg');
+      wireEditToggle(body,'oilType');
+    }
+
+    // --- Nhà cung cấp ---
+    function renderSupplierTab(body){
+      const rows=state.catalog.suppliers||[];
+      const e=(state.catEdit&&rows.find(r=>r.id===state.catEdit))||null;
+      body.innerHTML=`<div class="panel"><h2>${e?'Sửa nhà cung cấp':'Thêm nhà cung cấp'}</h2>
+        <div class="row">
+          <div><label>Tên NCC</label><input id="sName" value="${e?esc(e.name):''}" placeholder="Cửa hàng xăng dầu…"></div>
+          <div><label>Điện thoại</label><input id="sPhone" value="${e&&e.phone?esc(e.phone):''}"></div>
+        </div>
+        <label>Ghi chú</label><input id="sNote" value="${e&&e.note?esc(e.note):''}">
+        <div class="row" style="margin-top:12px;flex:0">
+          <button id="sSave" style="flex:0">${e?'Lưu':'Thêm'}</button>
+          ${e?'<button class="ghost" id="sCancel" style="flex:0">Hủy</button>':''}
+        </div><div id="sMsg" class="msg"></div></div>
+        <div class="panel"><h2>Danh sách nhà cung cấp</h2>${rows.length?`<table><thead><tr>
+          <th>Tên</th><th>Điện thoại</th><th>Ghi chú</th><th>Trạng thái</th><th></th></tr></thead><tbody>
+          ${rows.map(r=>`<tr><td>${esc(r.name)}</td><td>${esc(r.phone||'')}</td><td>${esc(r.note||'')}</td>
+            <td>${statusCell(r.active)}</td><td style="white-space:nowrap">${rowActions('supplier',r)}</td></tr>`).join('')}
+          </tbody></table>`:'<span class="muted">Chưa có nhà cung cấp.</span>'}</div>`;
+      document.getElementById('sSave').onclick=()=>catSave('rpc_supplier_upsert',{
+        p_id:e?e.id:null, p_name:val('sName'), p_phone:val('sPhone'), p_note:val('sNote'), p_active:e?e.active:true },'sMsg');
+      wireEditToggle(body,'supplier');
+    }
+
+    // --- Loại giao dịch (cố định: chỉ đổi tên / ngừng) ---
+    function renderTxnTypeTab(body){
+      const rows=state.catalog.txnTypes||[];
+      const e=(state.catEdit&&rows.find(r=>r.id===state.catEdit))||null;
+      body.innerHTML=`${e?`<div class="panel"><h2>Sửa loại giao dịch</h2>
+        <div class="row"><div><label>Tên hiển thị</label><input id="xName" value="${esc(e.name)}"></div></div>
+        <p class="muted">Mã: <b>${esc(e.code)}</b> · Bản chất: <b>${esc(e.kind)}</b> (cố định).</p>
+        <div class="row" style="margin-top:12px;flex:0">
+          <button id="xSave" style="flex:0">Lưu</button>
+          <button class="ghost" id="xCancel" style="flex:0">Hủy</button>
+        </div><div id="xMsg" class="msg"></div></div>`:''}
+        <div class="panel"><h2>Loại giao dịch</h2>
+        <p class="muted">Danh mục cố định (không thêm mới). Đổi tên hiển thị hoặc ngừng dùng.</p>
+        ${rows.length?`<table><thead><tr><th>Tên</th><th>Mã</th><th>Bản chất</th><th>Trạng thái</th><th></th></tr></thead><tbody>
+          ${rows.map(r=>`<tr><td>${esc(r.name)}</td><td>${esc(r.code)}</td><td>${esc(r.kind)}</td>
+            <td>${statusCell(r.active)}</td><td style="white-space:nowrap">${rowActions('txnType',r)}</td></tr>`).join('')}
+          </tbody></table>`:'<span class="muted">Chưa có.</span>'}</div>`;
+      if(e) document.getElementById('xSave').onclick=()=>catSave('rpc_txn_type_upsert',{
+        p_id:e.id, p_name:val('xName'), p_active:e.active },'xMsg');
+      wireEditToggle(body,'txnType');
+    }
+
+    function wireEditToggle(body, kind){
+      body.querySelectorAll('[data-edit]').forEach(b=> b.onclick=()=>{ state.catEdit=b.dataset.edit; renderCatTab(); });
+      body.querySelectorAll('[data-toggle]').forEach(b=> b.onclick=()=>catToggle(kind, b.dataset.toggle, b.dataset.active==='1'));
+      ['tCancel','vCancel','oCancel','sCancel','xCancel'].forEach(id=>{
+        const c=document.getElementById(id); if(c) c.onclick=()=>{ state.catEdit=null; renderCatTab(); };
+      });
     }
 
     document.getElementById('loginBtn').onclick=login;
