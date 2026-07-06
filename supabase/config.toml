@@ -1,0 +1,3 @@
+# Supabase CLI project config. Dùng bởi GitHub Action .github/workflows/deploy-db.yml
+# (supabase db push). project_id = project ref của Supabase project "thiennhat-fuel".
+project_id = "zaipiepimqkbulaiaupe"

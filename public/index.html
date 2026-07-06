@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Thiên Nhật — Tồn kho Xăng dầu</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <meta name="theme-color" content="#0E5AA7">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="TN Xăng dầu">
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));
+    }
+  </script>
+  <style>
+    :root{--bg:#F4F6FA;--panel:#fff;--ink:#1E2A38;--muted:#64707E;--line:#E4EAF1;
+      --accent:#0E5AA7;--accent-soft:#E7F0FA;--ok:#1E8E5A;--danger:#D14343;--input:#F5F8FC;}
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--ink);font-size:15px;
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif}
+    header{display:flex;align-items:center;justify-content:space-between;gap:12px;
+      padding:12px 16px;background:#fff;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:20}
+    h1{margin:0;font-size:16px;font-weight:800}
+    h2{margin:0 0 12px;font-size:18px;font-weight:800}
+    button,input,select{font:inherit;border-radius:10px;border:1px solid var(--line);min-height:44px}
+    input,select{width:100%;background:var(--input);padding:10px 12px;color:var(--ink)}
+    input:focus,select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);background:#fff}
+    button{background:var(--accent);color:#fff;border:none;padding:10px 16px;font-weight:700;cursor:pointer}
+    button.ghost{background:#fff;color:var(--accent);border:1px solid var(--line)}
+    button.sm{min-height:34px;padding:6px 12px;font-size:13px}
+    .wrap{max-width:820px;margin:0 auto;padding:16px}
+    .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:14px}
+    .muted{color:var(--muted)}
+    .row{display:flex;gap:10px;flex-wrap:wrap}
+    .row>*{flex:1;min-width:140px}
+    label{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px;font-weight:600}
+    .hidden{display:none!important}
+    .nav{display:flex;gap:8px;overflow-x:auto;padding:10px 16px;background:#fff;border-bottom:1px solid var(--line);position:sticky;top:57px;z-index:10}
+    .nav button{background:var(--accent-soft);color:var(--accent);white-space:nowrap;min-height:38px;padding:6px 14px;border-radius:999px}
+    .nav button.active{background:var(--accent);color:#fff}
+    table{width:100%;border-collapse:collapse}
+    th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--line);font-size:14px}
+    th{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.03em}
+    .badge{display:inline-block;padding:2px 10px;border-radius:999px;background:var(--accent-soft);color:var(--accent);font-size:12px;font-weight:700}
+    .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#1E2A38;color:#fff;
+      padding:12px 18px;border-radius:12px;opacity:0;transition:opacity .2s;z-index:50;max-width:90%}
+    .toast.show{opacity:1}
+    .msg{color:var(--danger);font-size:13px;min-height:18px;margin-top:6px}
+    .soon{padding:30px 10px;text-align:center;color:var(--muted)}
+    .soon .big{font-size:40px}
+  </style>
+</head>
+<body>
+  <!-- ĐĂNG NHẬP -->
+  <div id="loginView" class="wrap">
+    <div class="panel" style="max-width:420px;margin:8vh auto 0">
+      <h2>Đăng nhập</h2>
+      <p class="muted" style="margin-top:-6px">Tồn kho Xăng dầu — Thiên Nhật</p>
+      <label>Email</label>
+      <input id="loginEmail" type="email" autocomplete="username" placeholder="ban@congty.com">
+      <label>Mã PIN</label>
+      <input id="loginPin" type="password" inputmode="numeric" autocomplete="current-password" placeholder="••••">
+      <div style="margin-top:14px"><button id="loginBtn" style="width:100%">Đăng nhập</button></div>
+      <div id="loginMsg" class="msg"></div>
+    </div>
+  </div>
+
+  <!-- APP -->
+  <div id="appView" class="hidden">
+    <header>
+      <h1>TN — Tồn kho Xăng dầu</h1>
+      <div class="row" style="flex:0">
+        <span id="userBadge" class="badge"></span>
+        <button class="ghost sm" id="logoutBtn">Đăng xuất</button>
+      </div>
+    </header>
+    <div class="nav" id="nav"></div>
+    <div class="wrap"><div id="screen"></div></div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="./config.js"></script>
+  <script>
+    const APP = window.APP_CONFIG || {};
+    const sb = window.supabase.createClient(APP.supabaseUrl, APP.supabaseAnonKey, {
+      auth: { persistSession: true, autoRefreshToken: true }
+    });
+
+    const state = { session:null, user:null, permissions:[], screen:'home' };
+
+    // [id, nhãn, quyền cần có, slice] — server VẪN chốt quyền qua require_permission().
+    const SCREENS = [
+      ['home',      'Trang chủ',        null,             ''],
+      ['pump',      'Nhập bơm',         'pump:create',    'S2'],
+      ['review',    'Đối chiếu chéo',   'pump:review',    'S2'],
+      ['inventory', 'Tồn kho',          'inventory:read', 'S5'],
+      ['adjust',    'Tịnh téc / Kiểm kê','adjust:manage',  'S6'],
+      ['report',    'Báo cáo tháng',    'report:read',    'S8'],
+      ['catalog',   'Danh mục & Xe',    'catalog:manage', 'S1'],
+      ['users',     'Tài khoản',        'user:manage',    '']
+    ];
+    const ROLE_LABELS = { ThuKho:'Thủ kho', KeToan:'Kế toán', Admin:'Admin' };
+
+    function can(p){ return !p || state.permissions.includes('*') || state.permissions.includes(p); }
+    function visibleScreens(){ return SCREENS.filter(s => can(s[2])); }
+    function esc(v){ return String(v ?? '').replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s])); }
+    function val(id){ return (document.getElementById(id)?.value || '').trim(); }
+    function toast(t){ const e=document.getElementById('toast'); e.textContent=t; e.classList.add('show'); setTimeout(()=>e.classList.remove('show'),2600); }
+
+    function call(name, params){
+      return new Promise((resolve,reject)=>{
+        let done=false;
+        const timer=setTimeout(()=>{ if(done)return; done=true; reject(new Error(`Tác vụ ${name} chạy quá lâu. Kiểm tra mạng.`)); },45000);
+        sb.rpc(name, params||{}).then(({data,error})=>{
+          if(done)return; done=true; clearTimeout(timer);
+          if(error){ reject(new Error(error.message||String(error))); return; }
+          if(data && data.ok===false){ reject(new Error((data.error&&data.error.message)||data.message||`Tác vụ ${name} lỗi.`)); return; }
+          resolve(data);
+        }).catch(err=>{ if(done)return; done=true; clearTimeout(timer); reject(err instanceof Error?err:new Error(String(err))); });
+      });
+    }
+
+    async function login(){
+      const msg=document.getElementById('loginMsg'); msg.textContent='Đang đăng nhập...';
+      const email=val('loginEmail'), pin=val('loginPin');
+      if(!email||!pin){ msg.textContent='Nhập email và mã PIN.'; return; }
+      try{
+        const {data,error}=await sb.auth.signInWithPassword({ email, password:'tn-pin::'+pin });
+        if(error) throw error;
+        state.session=data.session; msg.textContent=''; await bootstrap();
+      }catch(err){ msg.textContent=mapAuthError(err); }
+    }
+    function mapAuthError(err){
+      const m=String(err&&err.message||err||'');
+      if(/invalid login credentials/i.test(m)) return 'Email hoặc mã PIN không đúng.';
+      if(/email not confirmed/i.test(m)) return 'Tài khoản chưa kích hoạt. Liên hệ Admin.';
+      return m || 'Đăng nhập thất bại.';
+    }
+    async function logout(){ await sb.auth.signOut(); location.reload(); }
+
+    async function bootstrap(){
+      try{
+        const res=await call('rpc_bootstrap');
+        state.user=res.user; state.permissions=res.permissions||[];
+        document.getElementById('loginView').classList.add('hidden');
+        document.getElementById('appView').classList.remove('hidden');
+        document.getElementById('userBadge').textContent=`${state.user.name} · ${ROLE_LABELS[state.user.role]||state.user.role}`;
+        const allowed=visibleScreens();
+        if(!allowed.some(s=>s[0]===state.screen)) state.screen=allowed[0][0];
+        renderNav(); renderScreen();
+      }catch(err){
+        document.getElementById('loginView').classList.remove('hidden');
+        document.getElementById('appView').classList.add('hidden');
+        document.getElementById('loginMsg').textContent=err.message||'Không tải được dữ liệu.';
+      }
+    }
+
+    function renderNav(){
+      const nav=document.getElementById('nav');
+      nav.innerHTML = visibleScreens().map(s =>
+        `<button data-s="${s[0]}" class="${s[0]===state.screen?'active':''}">${esc(s[1])}</button>`).join('');
+      nav.querySelectorAll('button').forEach(b=> b.onclick=()=>{ state.screen=b.dataset.s; renderNav(); renderScreen(); });
+    }
+
+    function renderScreen(){
+      const el=document.getElementById('screen');
+      const scr=SCREENS.find(s=>s[0]===state.screen);
+      if(state.screen==='home') return renderHome(el);
+      if(state.screen==='users') return renderUsers(el);
+      // Placeholder cho các slice chưa build
+      el.innerHTML=`<div class="panel soon"><div class="big">🛠️</div>
+        <h2>${esc(scr[1])}</h2>
+        <p class="muted">Màn hình này sẽ được xây ở lát <b>${scr[3]}</b> theo lộ trình (xem docs/issues).</p></div>`;
+    }
+
+    function renderHome(el){
+      const items=visibleScreens().filter(s=>s[0]!=='home');
+      el.innerHTML=`<div class="panel">
+        <h2>Xin chào, ${esc(state.user.name)}</h2>
+        <p class="muted">Vai trò: <b>${ROLE_LABELS[state.user.role]||state.user.role}</b>. Chọn chức năng bên dưới.</p>
+        <div class="row" style="margin-top:8px">
+          ${items.map(s=>`<button class="ghost" data-go="${s[0]}">${esc(s[1])}${s[3]?` <span class="muted">(${s[3]})</span>`:''}</button>`).join('')}
+        </div>
+      </div>
+      <div class="panel"><b>Nền tảng S0 đã sẵn sàng.</b>
+        <p class="muted">Đăng nhập email+PIN, phân quyền theo vai trò (Thủ kho / Kế toán / Admin), quản tài khoản. Các nghiệp vụ xăng dầu sẽ bổ sung theo từng lát S1→S9.</p></div>`;
+      el.querySelectorAll('[data-go]').forEach(b=> b.onclick=()=>{ state.screen=b.dataset.go; renderNav(); renderScreen(); });
+    }
+
+    // ---- Màn Tài khoản (Admin) — chạy thật ----
+    async function renderUsers(el){
+      el.innerHTML=`<div class="panel">
+        <h2>Tạo tài khoản</h2>
+        <div class="row">
+          <div><label>Email</label><input id="uEmail" type="email" placeholder="nguoidung@congty.com"></div>
+          <div><label>Tên</label><input id="uName" placeholder="Họ tên"></div>
+        </div>
+        <div class="row">
+          <div><label>Vai trò</label><select id="uRole">
+            <option value="ThuKho">Thủ kho</option>
+            <option value="KeToan">Kế toán</option>
+            <option value="Admin">Admin</option>
+          </select></div>
+          <div><label>Mã PIN (≥4 số)</label><input id="uPin" inputmode="numeric" placeholder="••••"></div>
+        </div>
+        <div style="margin-top:12px"><button id="uCreate">Tạo tài khoản</button></div>
+        <div id="uMsg" class="msg"></div>
+      </div>
+      <div class="panel"><h2>Danh sách tài khoản</h2><div id="uList" class="muted">Đang tải…</div></div>`;
+      document.getElementById('uCreate').onclick=createUser;
+      loadUsers();
+    }
+    async function loadUsers(){
+      const box=document.getElementById('uList');
+      try{
+        const res=await call('rpc_admin_list_users');
+        const rows=res.rows||[];
+        if(!rows.length){ box.innerHTML='<span class="muted">Chưa có tài khoản.</span>'; return; }
+        box.innerHTML=`<table><thead><tr><th>Email</th><th>Tên</th><th>Vai trò</th><th>Trạng thái</th><th></th></tr></thead><tbody>
+          ${rows.map(r=>`<tr>
+            <td>${esc(r.email)}</td><td>${esc(r.name)}</td>
+            <td>${ROLE_LABELS[r.role]||esc(r.role)}</td>
+            <td>${r.status==='Hoạt động'?'<span class="badge">Hoạt động</span>':esc(r.status)}</td>
+            <td style="white-space:nowrap">
+              <button class="ghost sm" data-pin="${r.id}" data-email="${esc(r.email)}">Đổi PIN</button>
+              <button class="ghost sm" data-toggle="${r.id}" data-status="${esc(r.status)}">${r.status==='Hoạt động'?'Ngừng':'Bật'}</button>
+            </td></tr>`).join('')}
+        </tbody></table>`;
+        box.querySelectorAll('[data-pin]').forEach(b=> b.onclick=()=>resetPin(b.dataset.pin,b.dataset.email));
+        box.querySelectorAll('[data-toggle]').forEach(b=> b.onclick=()=>toggleUser(b.dataset.toggle, b.dataset.status));
+      }catch(err){ box.innerHTML=`<span class="msg">${esc(err.message)}</span>`; }
+    }
+    async function createUser(){
+      const msg=document.getElementById('uMsg'); msg.textContent='';
+      try{
+        await call('rpc_admin_create_user',{ p_email:val('uEmail'), p_name:val('uName'), p_role:val('uRole'), p_pin:val('uPin') });
+        toast('Đã tạo tài khoản.'); ['uEmail','uName','uPin'].forEach(id=>document.getElementById(id).value=''); loadUsers();
+      }catch(err){ msg.textContent=err.message; }
+    }
+    async function resetPin(id,email){
+      const pin=(prompt(`Đặt lại PIN cho ${email} (≥4 số):`,'')||'').trim();
+      if(!pin) return;
+      try{ await call('rpc_admin_reset_pin',{ p_id:id, p_pin:pin }); toast('Đã đặt lại PIN.'); }
+      catch(err){ toast(err.message); }
+    }
+    async function toggleUser(id,status){
+      const next = status==='Hoạt động' ? 'Ngừng' : 'Hoạt động';
+      try{ await call('rpc_admin_update_user',{ p_id:id, p_status:next }); toast('Đã cập nhật.'); loadUsers(); }
+      catch(err){ toast(err.message); }
+    }
+
+    document.getElementById('loginBtn').onclick=login;
+    document.getElementById('logoutBtn').onclick=logout;
+    document.getElementById('loginPin').addEventListener('keydown',e=>{ if(e.key==='Enter') login(); });
+
+    (async function init(){
+      const { data } = await sb.auth.getSession();
+      if(data && data.session){ state.session=data.session; bootstrap(); }
+    })();
+    sb.auth.onAuthStateChange((event)=>{ if(event==='SIGNED_OUT') location.reload(); });
+  </script>
+</body>
+</html>
