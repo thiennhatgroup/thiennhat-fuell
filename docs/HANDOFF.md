@@ -14,10 +14,11 @@ Vai trò `ThuKho`/`KeToan`/`Admin`. Đối chiếu chéo do **thủ kho khác ng
 - **S0 (nền tảng) — XONG & đã push `main`** (commit "S0…"): `supabase/migrations/0001_schema..0005_admin_users`, `public/index.html` (login email+PIN, shell điều hướng theo vai trò, màn Tài khoản chạy thật), workflows, config.js đã điền URL+anon.
 - **Go-live S0 đang chờ người dùng**: đặt 3 Actions secrets → chạy workflow "Deploy Supabase migrations" → bật Pages (gh-pages) → tạo Admin (Auth → Users, password `tn-pin::<PIN>`) + chạy `supabase/after_setup_create_admin.sql` → đăng nhập.
 - **S1 (Danh mục & Xe) — XONG (chưa push)**: `supabase/migrations/0006_catalog.sql` (bảng oil_types/suppliers/transaction_types/tanks/vehicles deny-by-default + RPC list/active/upsert/toggle, gated `catalog:manage`; đọc active gated `catalog:read` cho mọi vai trò; seed 3 loại giao dịch) + màn "Danh mục & Xe" trong `public/index.html` (5 tab: Téc/Xe/Loại dầu/NCC/Loại giao dịch, thêm/sửa/bật-ngừng). Loại giao dịch cố định (chỉ đổi tên/ngừng). Đã qua kiểm thử tĩnh (`node --check` FE, cấu trúc SQL). **Cần push + deploy để validate DB thật.**
-- **Tiếp theo: S2 (Sổ cái + vòng đời phiếu bơm)** — xem `docs/issues/S2-so-cai-phieu-bom.md`. Rồi S3→S9 theo thứ tự (mỗi issue có Blocked by).
+- **S2 (Sổ cái + vòng đời phiếu bơm) — XONG (chưa push)**: `supabase/migrations/0007_pump_ledger.sql` — bảng `ledger` append-only (entry_type bom/nhap/adjust; km_run generated; status Nhap/ChoDoiChieu/DaDuyet), deny-by-default. Máy trạng thái: Nhap→(Submit ngày, cấp Số phiếu BOM-YYYY-######)→ChoDoiChieu→DaDuyet | Lệch→về Nhap+reject_reason. RPC: create/update/delete/submit_day/withdraw/list_mine + review_queue/approve/reject (chặn tự-duyệt: created_by<>auth.uid()), vehicle_last_km (tự điền KM cũ). FE: màn Nhập bơm (form card + danh sách phiếu của tôi + Submit ngày + rút lại) và Đối chiếu chéo (hàng đợi Khớp/Lệch). Test mô phỏng `supabase/tests/pump_flow_simulation.sql` (BEGIN…ROLLBACK, giả lập auth.uid qua request.jwt.claim.sub) — **chưa chạy thật (sandbox không có DB); chạy trong SQL Editor sau deploy.** Kiểm thử tĩnh FE/SQL đã qua.
+- **Tiếp theo: S3 (Ảnh chứng từ + OCR-ready)** — xem `docs/issues/S3-anh-chung-tu.md`. Rồi S4→S9 theo thứ tự.
 
 ## 4. Lộ trình lát (docs/issues/)
-S0 nền tảng ✅ · S1 danh mục & xe ✅ · S2 sổ cái + vòng đời phiếu bơm · S3 ảnh + OCR-ready · S4 phiếu nhập · S5 tồn kho realtime · S6 tịnh téc/kiểm kê + phân bổ · S7 cảnh báo + push · S8 báo cáo tháng · S9 migrate.
+S0 nền tảng ✅ · S1 danh mục & xe ✅ · S2 sổ cái + vòng đời phiếu bơm ✅ · S3 ảnh + OCR-ready · S4 phiếu nhập · S5 tồn kho realtime · S6 tịnh téc/kiểm kê + phân bổ · S7 cảnh báo + push · S8 báo cáo tháng · S9 migrate.
 
 ## 5. Lưu ý kỹ thuật
 - KHÔNG sửa migration cũ; thêm `NNNN_*.sql` mới. Giữ RPC-first (xem AGENTS.md).
