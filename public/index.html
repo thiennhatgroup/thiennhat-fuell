@@ -821,7 +821,7 @@
       document.getElementById('pSubmit').onclick=function(){ withBusy(this,'Đang submit…',()=>submitPumpDay(el)); };
       const c=document.getElementById('pCancel'); if(c) c.onclick=()=>{ state.pumpEdit=null; renderPumpUI(el); };
       renderPumpList();
-      if(e) renderPhotoSection(e.id, e.vehicleId);
+      if(e) renderPhotoSection(e.id, e.vehicleId, monthOf(e.entryDate));
     }
 
     function vehHasOdo(vehicleId){
@@ -832,8 +832,14 @@
       try{ const {data}=await sb.storage.from('chung-tu').createSignedUrl(path,300); return (data&&data.signedUrl)||''; }
       catch(_){ return ''; }
     }
+    // Storage chia folder theo tháng: <YYYY-MM>/<ledgerId>/<kind>-<ts>.<ext>.
+    function monthOf(dateStr){ return (dateStr && /^\d{4}-\d{2}/.test(dateStr) ? dateStr : new Date().toISOString()).slice(0,7); }
+    function photoPath(ym, ledgerId, kind, file){
+      const ext=((file.name||'').split('.').pop()||'jpg').toLowerCase().replace(/[^a-z0-9]/g,'')||'jpg';
+      return `${ym}/${ledgerId}/${kind}-${Date.now()}.${ext}`;
+    }
     const KIND_LABEL={ pump_meter:'Ảnh đồng hồ bơm', odometer:'Ảnh công-tơ-mét' };
-    async function renderPhotoSection(ledgerId, vehicleId){
+    async function renderPhotoSection(ledgerId, vehicleId, ym){
       const box=document.getElementById('photoBox'); if(!box) return;
       let photos=[];
       try{ photos=(await call('rpc_pump_photo_list',{p_ledger_id:ledgerId})).rows||[]; }
@@ -854,27 +860,26 @@
         }
       }
       box.innerHTML=`<div class="row">${parts.join('')}</div><div id="photoMsg" class="msg"></div>`;
-      box.querySelectorAll('input[type=file]').forEach(inp=> inp.onchange=()=>uploadPhoto(ledgerId, vehicleId, inp.dataset.kind, inp.files[0]));
-      box.querySelectorAll('[data-delphoto]').forEach(b=> b.onclick=()=>deletePhoto(ledgerId, vehicleId, b.dataset.delphoto));
+      box.querySelectorAll('input[type=file]').forEach(inp=> inp.onchange=()=>uploadPhoto(ledgerId, vehicleId, ym, inp.dataset.kind, inp.files[0]));
+      box.querySelectorAll('[data-delphoto]').forEach(b=> b.onclick=()=>deletePhoto(ledgerId, vehicleId, ym, b.dataset.delphoto));
     }
-    async function uploadPhoto(ledgerId, vehicleId, kind, file){
+    async function uploadPhoto(ledgerId, vehicleId, ym, kind, file){
       if(!file) return;
       const msg=document.getElementById('photoMsg'); if(msg){ msg.style.color='var(--muted)'; msg.textContent='Đang tải ảnh…'; }
       try{
-        const ext=((file.name||'').split('.').pop()||'jpg').toLowerCase().replace(/[^a-z0-9]/g,'')||'jpg';
-        const path=`${ledgerId}/${kind}-${Date.now()}.${ext}`;
+        const path=photoPath(ym, ledgerId, kind, file);
         const {error}=await sb.storage.from('chung-tu').upload(path, file, {contentType:file.type||'image/jpeg', upsert:false});
         if(error) throw error;
         await call('rpc_pump_photo_add',{p_ledger_id:ledgerId, p_kind:kind, p_path:path});
-        toast('Đã thêm ảnh.'); renderPhotoSection(ledgerId, vehicleId);
+        toast('Đã thêm ảnh.'); renderPhotoSection(ledgerId, vehicleId, ym);
       }catch(err){ if(msg){ msg.style.color='var(--danger)'; msg.textContent=err.message||'Tải ảnh thất bại.'; } }
     }
-    async function deletePhoto(ledgerId, vehicleId, photoId){
+    async function deletePhoto(ledgerId, vehicleId, ym, photoId){
       if(!confirm('Xóa ảnh này?')) return;
       try{
         const r=await call('rpc_pump_photo_delete',{p_id:photoId});
         if(r&&r.path){ try{ await sb.storage.from('chung-tu').remove([r.path]); }catch(_){} }
-        toast('Đã xóa ảnh.'); renderPhotoSection(ledgerId, vehicleId);
+        toast('Đã xóa ảnh.'); renderPhotoSection(ledgerId, vehicleId, ym);
       }catch(err){ toast(err.message); }
     }
 
@@ -1060,7 +1065,7 @@
         </div><div id="nMsg" class="msg"></div>
       </div>
       ${e?`<div class="panel"><h2>Ảnh chứng từ</h2>
-        <p class="muted" style="margin-top:-6px">Bắt buộc ≥1 ảnh phiếu nhập. Chụp trước khi Submit ngày.</p>
+        <p class="muted" style="margin-top:-6px">Bắt buộc <b>2 ảnh</b>: Biên bản giao nhận + Phiếu nhập kho. Chụp trước khi Submit ngày.</p>
         <div id="nPhotoBox" class="muted">Đang tải ảnh…</div></div>`:''}
       <div class="panel"><div class="row" style="align-items:center"><h2 style="flex:1;margin:0">Phiếu của tôi</h2>
         <button id="nSubmit" class="sm" style="flex:0">Submit ngày</button></div>
@@ -1080,47 +1085,50 @@
       document.getElementById('nSubmit').onclick=function(){ withBusy(this,'Đang submit…',()=>submitNhapDay(el)); };
       const c=document.getElementById('nCancel'); if(c) c.onclick=()=>{ state.nhapEdit=null; renderNhapUI(el); };
       renderNhapList();
-      if(e) renderReceiptSection(e.id);
+      if(e) renderReceiptSection(e.id, monthOf(e.entryDate));
     }
 
-    async function renderReceiptSection(ledgerId){
+    const NHAP_KIND_LABEL={ bien_ban_giao_nhan:'Ảnh biên bản giao nhận', phieu_nhap_kho:'Ảnh phiếu nhập kho' };
+    async function renderReceiptSection(ledgerId, ym){
       const box=document.getElementById('nPhotoBox'); if(!box) return;
       let photos=[];
       try{ photos=(await call('rpc_nhap_photo_list',{p_ledger_id:ledgerId})).rows||[]; }
       catch(err){ box.innerHTML=`<span class="msg">${esc(err.message)}</span>`; return; }
-      const parts=photos.map(p=>`<div style="flex:1;min-width:160px" data-slot="${p.id}"><label>Ảnh phiếu nhập</label>
-        <span class="muted">Đang tải…</span></div>`);
-      parts.push(`<div style="flex:1;min-width:160px"><label>Thêm ảnh phiếu nhập ${photos.length?'':'<span style="color:var(--danger)">*</span>'}</label>
-        <input type="file" accept="image/*" capture="environment" id="nPhotoInput"></div>`);
-      box.innerHTML=`<div class="row">${parts.join('')}</div><div id="nPhotoMsg" class="msg"></div>`;
-      for(const p of photos){
-        const slot=box.querySelector(`[data-slot="${p.id}"]`); if(!slot) continue;
-        const url=await signedUrl(p.path);
-        slot.innerHTML=`<label>Ảnh phiếu nhập</label>
-          ${url?`<a href="${esc(url)}" target="_blank"><img class="thumb" src="${esc(url)}"></a>`:'<div class="muted">Đã có ảnh.</div>'}
-          <div style="margin-top:6px"><button class="ghost sm" data-delreceipt="${p.id}">Xóa ảnh</button></div>`;
+      const slots=['bien_ban_giao_nhan','phieu_nhap_kho'];
+      const parts=[];
+      for(const kind of slots){
+        const p=photos.find(x=>x.kind===kind) || photos.find(x=>x.kind==='receipt' && kind==='bien_ban_giao_nhan');
+        if(p){
+          const url=await signedUrl(p.path);
+          parts.push(`<div style="flex:1;min-width:160px"><label>${NHAP_KIND_LABEL[kind]}</label>
+            ${url?`<a href="${esc(url)}" target="_blank"><img class="thumb" src="${esc(url)}"></a>`:'<div class="muted">Đã có ảnh.</div>'}
+            <div style="margin-top:6px"><button class="ghost sm" data-delreceipt="${p.id}">Xóa ảnh</button></div></div>`);
+        }else{
+          parts.push(`<div style="flex:1;min-width:160px"><label>${NHAP_KIND_LABEL[kind]} <span class="rq">*</span></label>
+            <input type="file" accept="image/*" capture="environment" data-kind="${kind}"></div>`);
+        }
       }
-      const inp=document.getElementById('nPhotoInput'); if(inp) inp.onchange=()=>uploadReceipt(ledgerId, inp.files[0]);
-      box.querySelectorAll('[data-delreceipt]').forEach(b=> b.onclick=()=>deleteReceipt(ledgerId, b.dataset.delreceipt));
+      box.innerHTML=`<div class="row">${parts.join('')}</div><div id="nPhotoMsg" class="msg"></div>`;
+      box.querySelectorAll('input[type=file]').forEach(inp=> inp.onchange=()=>uploadReceipt(ledgerId, ym, inp.dataset.kind, inp.files[0]));
+      box.querySelectorAll('[data-delreceipt]').forEach(b=> b.onclick=()=>deleteReceipt(ledgerId, ym, b.dataset.delreceipt));
     }
-    async function uploadReceipt(ledgerId, file){
+    async function uploadReceipt(ledgerId, ym, kind, file){
       if(!file) return;
       const msg=document.getElementById('nPhotoMsg'); if(msg){ msg.style.color='var(--muted)'; msg.textContent='Đang tải ảnh…'; }
       try{
-        const ext=((file.name||'').split('.').pop()||'jpg').toLowerCase().replace(/[^a-z0-9]/g,'')||'jpg';
-        const path=`${ledgerId}/receipt-${Date.now()}.${ext}`;
+        const path=photoPath(ym, ledgerId, kind, file);
         const {error}=await sb.storage.from('chung-tu').upload(path, file, {contentType:file.type||'image/jpeg', upsert:false});
         if(error) throw error;
-        await call('rpc_nhap_photo_add',{p_ledger_id:ledgerId, p_path:path});
-        toast('Đã thêm ảnh.'); renderReceiptSection(ledgerId);
+        await call('rpc_nhap_photo_add',{p_ledger_id:ledgerId, p_kind:kind, p_path:path});
+        toast('Đã thêm ảnh.'); renderReceiptSection(ledgerId, ym);
       }catch(err){ if(msg){ msg.style.color='var(--danger)'; msg.textContent=err.message||'Tải ảnh thất bại.'; } }
     }
-    async function deleteReceipt(ledgerId, photoId){
+    async function deleteReceipt(ledgerId, ym, photoId){
       if(!confirm('Xóa ảnh này?')) return;
       try{
         const r=await call('rpc_nhap_photo_delete',{p_id:photoId});
         if(r&&r.path){ try{ await sb.storage.from('chung-tu').remove([r.path]); }catch(_){} }
-        toast('Đã xóa ảnh.'); renderReceiptSection(ledgerId);
+        toast('Đã xóa ảnh.'); renderReceiptSection(ledgerId, ym);
       }catch(err){ toast(err.message); }
     }
 
@@ -1142,8 +1150,8 @@
       }catch(err){ msg.textContent=err.message; }
     }
     async function submitNhapDay(el){
-      if(!confirm('Submit toàn bộ phiếu nhập Nháp để chuyển sang Chờ đối chiếu?')) return;
-      try{ const r=await call('rpc_nhap_submit_day'); toast(`Đã submit ${r.count} phiếu.`);
+      if(!confirm('Submit toàn bộ phiếu nhập Nháp? Phiếu sẽ được duyệt thẳng và vào tồn kho ngay.')) return;
+      try{ const r=await call('rpc_nhap_submit_day'); toast(`Đã nhập & duyệt ${r.count} phiếu vào tồn.`);
         await loadNhapMine(); renderNhapUI(el); }
       catch(err){ toast(err.message); }
     }
