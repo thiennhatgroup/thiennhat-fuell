@@ -25,14 +25,12 @@ no storage buckets/policies created in migrations (helper-only edit), no emojis.
 
 Baseline smells (judgement calls):
 
-- [ ] **Duplicated Code / Shotgun Surgery (strongest).** The tinh/allocation block in
-  `rpc_stock_period_record` (0025) is copy-pasted from `rpc_stock_period_close` in
-  `0012_stock_period.sql`: same `v_sum_am/v_sum_duong/v_max_veh` declares, same
-  `entry_type='bom' and tt.kind='xuat'` aggregation, same proportional "phân bổ theo tỉ lệ lít" loop,
-  same largest-vehicle rounding fix-up. A change to allocation rules now needs edits in two functions.
-  → Extract a shared `stock_period_allocate(period_id, tank_id, start, close)`.
-- [ ] **Duplicated Code within the RPC.** The ledger aggregation query appears twice inside
-  `rpc_stock_period_record` — once for `v_total`, again verbatim (with `group by`) in the alloc loop.
+- [x] **Duplicated Code / Shotgun Surgery (strongest).** ~~The tinh/allocation block is copy-pasted
+  between `rpc_stock_period_record` and `rpc_stock_period_close`.~~ **FIXED** — extracted
+  `stock_period_allocate()` in migration `0027` (see Candidate 2 below).
+- [x] **Duplicated Code within the RPC.** ~~The ledger aggregation query appears twice.~~ **FIXED** —
+  extracted `stock_period_pump_total()` in `0027`; the alloc loop's query now lives once in
+  `stock_period_allocate()`.
 - [ ] **Data Clumps / Primitive Obsession (minor).** `p_kind text` with sentinel strings
   `'tinh_tec'`/`'kiem_ke'` validated ad-hoc; the FE mirrors this with the `P` field-map and repeated
   `kind==='tinh_tec'` switches in `recordPeriod`. A domain enum would centralize it.
@@ -103,20 +101,23 @@ Wins:
 - internal seam for testability: module ACCEPTS its storage adapter rather than reaching for global
   `sb.storage`.
 
-## Candidate 2 — Extract stock_period_allocate() behind one seam  **[Strong — HELD]**
+## Candidate 2 — Extract stock_period_allocate() behind one seam  **[DONE]**
 
-Files: `0012_stock_period.sql` (rpc_stock_period_close) · `0025_stock_period_record.sql`
-(rpc_stock_period_record). Same as Standards smell #1 above — the proportional tịnh-âm/dương split +
-largest-vehicle rounding is copy-pasted across two RPCs (and the ledger-sum query twice inside the
-record RPC). Extract one `stock_period_allocate(period, tank, start, close, am, duong, total)` +
-`stock_period_pump_total(tank, start, close)`; both RPCs call them. Locality: the math lives once.
+Files: `0012_stock_period.sql` (rpc_stock_period_close) · `0026_kiemke_bienban_required.sql`
+(rpc_stock_period_record). Same as Standards smells #1 & #2 — the proportional tịnh-âm/dương split +
+largest-vehicle rounding + ledger-sum query were copy-pasted across two RPCs.
 
-**HELD — deliberately not done yet.** No local Postgres (migrations only deploy via the
-`supabase db push` GitHub Action), so this refactor of the per-vehicle fuel-allocation *math* cannot be
-executed/tested here. A silent extraction error would corrupt vehicle accounting. The duplication is a
-maintainability smell, not an active bug — not worth shipping blind. Do it when a staging DB is
-available: extract, `db push`, then cross-check `stock_period_alloc` totals against a known period
-before/after.
+**DONE** — migration `0027_stock_period_allocate_helper.sql` adds two internal helpers
+(`stock_period_pump_total(tank,start,close)` and
+`stock_period_allocate(period,tank,start,close,am,duong,total)`) and create-or-replaces both RPCs to
+call them. Helpers are `security definer set search_path = public, pg_temp`, NOT granted to
+`authenticated` (internal-only, matching `tank_book_before`). The 0026 biên-bản guard is preserved.
+
+Verification without a DB (no local Postgres): the allocation block and the pump-total query in the
+helper were proven **byte-identical** to both originals via a normalized-token diff (v_* → params);
+`$$` quoting balanced (8 = 4 functions); exactly one `for v_rec in` loop remains (in the helper), both
+RPCs call `stock_period_allocate`. Still: run `supabase db push` and cross-check `stock_period_alloc`
+totals on a known period after deploy, since the math can't be executed here.
 
 ## Candidate 3 — Move the kiểm-kê invariant onto the RPC seam  **[DONE]**
 
