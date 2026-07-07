@@ -5,5 +5,7 @@
 window.APP_CONFIG = {
   supabaseUrl: "https://zaipiepimqkbulaiaupe.supabase.co",
   supabaseAnonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InphaXBpZXBpbXFrYnVsYWlhdXBlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMzMjcyNzQsImV4cCI6MjA5ODkwMzI3NH0.qKtKUCrUiRAra77jmkaWaQplp80MJ5hRU96eBRkS310",
+  // Web Push (S7): dán VAPID public key ở đây (trùng secret VAPID_PUBLIC_KEY của Edge
+  // Function send-push). Để trống => nút "Bật thông báo" ẩn, app vẫn chạy bình thường.
   vapidPublicKey: ""
 };
