@@ -91,9 +91,10 @@
     /* ---- Workspace 2-col (form + result) ---- */
     .workspace{display:grid;grid-template-columns:minmax(320px,.82fr) minmax(360px,1.18fr);gap:18px;align-items:start}
     .workspace>*{margin-bottom:0;min-width:0}
-    /* Bảng danh sách dài (email/tên…) tự xuống dòng để vừa cột, dư ra thì cuộn ngang trong panel. */
+    /* Danh sách dư ra thì cuộn ngang gọn trong panel, không tràn ra ngoài. */
     .workspace .panel{overflow-x:auto}
-    .workspace .panel table td:first-child{overflow-wrap:anywhere}
+    /* Cột email dài (chuỗi liền) được phép bẻ dòng để bảng tài khoản vừa khít. */
+    .u-table td:first-child{overflow-wrap:anywhere}
     /* Cột form bên trái bám dính khi cuộn danh sách dài (chỉ desktop). */
     @media(min-width:921px){ .workspace .sticky-col{position:sticky;top:76px} }
     /* Panel danh sách trong workspace: đầu panel dính để tiêu đề luôn thấy. */
