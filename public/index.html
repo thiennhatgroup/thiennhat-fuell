@@ -257,11 +257,14 @@
     ];
     const ROLE_LABELS = { ThuKho:'Thủ kho', KeToan:'Kế toán', Admin:'Admin' };
     // Thứ tự màn ưu tiên theo vai trò (drawer + tab-bar). Màn không liệt kê xếp sau.
+    // Ưu tiên nghiệp vụ: Bơm → Nhập → Tồn kho → Tịnh téc → Báo cáo → Đối chiếu bơm.
     const ROLE_MENU_ORDER = {
-      ThuKho: ['home','pump','review','nhap','nhapReview','inventory','alerts'],
-      KeToan: ['home','inventory','report','adjust','alerts','nhapReview','review','catalog'],
-      Admin:  ['home','users','catalog','inventory','report','adjust','alerts','pump','review','nhap','nhapReview']
+      ThuKho: ['home','pump','nhap','inventory','adjust','report','review'],
+      KeToan: ['home','pump','nhap','inventory','adjust','report','review','catalog'],
+      Admin:  ['home','pump','nhap','inventory','adjust','report','review','catalog','users']
     };
+    // Màn vẫn truy cập được (qua chuông/deep-link) nhưng KHÔNG hiện trong menu drawer/tab.
+    const MENU_HIDDEN = ['nhapReview','alerts'];
     // Nhóm màn trong drawer: 'admin' = Quản trị, còn lại = Nghiệp vụ ('home' đứng riêng trên cùng).
     const ADMIN_SCREENS = ['catalog','users'];
     const TAB_LABEL = { home:'Trang chủ', pump:'Nhập bơm', review:'Đối chiếu', nhap:'Phiếu nhập', nhapReview:'Đối chiếu N', inventory:'Tồn kho', adjust:'Tịnh téc', alerts:'Cảnh báo', report:'Báo cáo', catalog:'Danh mục', users:'Tài khoản' };
@@ -272,6 +275,8 @@
 
     function can(p){ return !p || state.permissions.includes('*') || state.permissions.includes(p); }
     function visibleScreens(){ return SCREENS.filter(s => can(s[2])); }
+    // Màn hiển thị trong menu = có quyền và không nằm trong MENU_HIDDEN.
+    function menuScreens(){ return visibleScreens().filter(s => !MENU_HIDDEN.includes(s[0])); }
     function esc(v){ return String(v ?? '').replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s])); }
     function val(id){ return (document.getElementById(id)?.value || '').trim(); }
     function toast(t, type='ok'){ const e=document.getElementById('toast'); e.textContent=t; e.className=`toast ${type} show`; clearTimeout(toast._t); toast._t=setTimeout(()=>e.classList.remove('show'),2800); }
@@ -354,7 +359,7 @@
     function renderNav(){ renderDrawer(); renderTabBar(); }
 
     function renderDrawer(){
-      const feats = orderScreensForRole(visibleScreens());
+      const feats = orderScreensForRole(menuScreens());
       const ops = feats.filter(s => s[0]!=='home' && !ADMIN_SCREENS.includes(s[0]));
       const adm = feats.filter(s => ADMIN_SCREENS.includes(s[0]));
       const item = (id,label,idx)=>`<button class="drawer-item ${state.screen===id?'active':''}" onclick="navTo('${id}')">${idx!=null?idx+'. ':''}${esc(label)}</button>`;
@@ -372,7 +377,7 @@
 
     function renderTabBar(){
       const bar=document.getElementById('tabbar'); if(!bar) return;
-      const picked = orderScreensForRole(visibleScreens()).slice(0,4);
+      const picked = orderScreensForRole(menuScreens()).slice(0,4);
       const tab=(id,label)=>`<button class="tab ${id===state.screen?'active':''}" onclick="navTo('${id}')"><span class="tl">${esc(TAB_LABEL[id]||label)}</span></button>`;
       bar.innerHTML = picked.map(([id,label])=>tab(id,label)).join('') +
         `<button class="tab" onclick="toggleDrawer()"><span class="tl">Thêm</span></button>`;
