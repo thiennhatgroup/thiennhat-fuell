@@ -91,6 +91,9 @@
     /* ---- Workspace 2-col (form + result) ---- */
     .workspace{display:grid;grid-template-columns:minmax(320px,.82fr) minmax(360px,1.18fr);gap:18px;align-items:start}
     .workspace>*{margin-bottom:0;min-width:0}
+    /* Bảng danh sách dài (email/tên…) tự xuống dòng để vừa cột, dư ra thì cuộn ngang trong panel. */
+    .workspace .panel{overflow-x:auto}
+    .workspace .panel table td:first-child{overflow-wrap:anywhere}
     /* Cột form bên trái bám dính khi cuộn danh sách dài (chỉ desktop). */
     @media(min-width:921px){ .workspace .sticky-col{position:sticky;top:76px} }
     /* Panel danh sách trong workspace: đầu panel dính để tiêu đề luôn thấy. */
@@ -2106,21 +2109,20 @@
     function reportDetail(d){
       const rows=d.rows||[];
       const head=`<tr><th>STT</th><th>Biển số xe</th><th>Diesel từ téc</th><th>Bơm ngoài</th><th>Tổng diesel</th>
-        <th>KM (phiếu bơm)</th><th>Tiêu hao thực</th><th>Định mức bơm bom</th>
+        <th>KM (phiếu bơm)</th><th>Tiêu hao thực</th>
         <th>L/km (phiếu bơm)</th><th>L/km tháng trước</th><th>Thay đổi L/km</th></tr>`;
       const groupTable=(sub)=>{
         const body=sub.length?sub.map((r,i)=>`<tr>
           <td>${i+1}</td><td>${esc(r.plate)}</td>
           <td>${fmtL(r.dieselTec)}</td><td>${fmtL(r.bomNgoai)}</td><td style="font-weight:700">${fmtL(r.tongDiesel)}</td>
           <td>${fmtL(r.km)}</td><td style="font-weight:700">${fmtL(r.tieuHaoThuc)}</td>
-          <td>${r.dinhMucBom==null?'—':fmtL(r.dinhMucBom)}</td>
           <td>${r.lPerKm==null?'—':fmtL(r.lPerKm)}</td>
           <td class="muted">${r.lPerKmPrev==null?'—':fmtL(r.lPerKmPrev)}</td>
           <td style="${r.thayDoiLPerKm!=null&&Number(r.thayDoiLPerKm)>0?'color:var(--danger)':(r.thayDoiLPerKm!=null&&Number(r.thayDoiLPerKm)<0?'color:var(--ok)':'')}">${r.thayDoiLPerKm==null?'—':fmtL(r.thayDoiLPerKm)}</td></tr>`).join('')
-          :`<tr><td colspan="11" class="muted">Không có dữ liệu trong kỳ này.</td></tr>`;
+          :`<tr><td colspan="10" class="muted">Không có dữ liệu trong kỳ này.</td></tr>`;
         const foot=`<tr class="rpt-foot" style="font-weight:800">
           <td>TỔNG</td><td></td><td>${fmtL(sumBy(sub,r=>r.dieselTec))}</td><td>${fmtL(sumBy(sub,r=>r.bomNgoai))}</td><td>${fmtL(sumBy(sub,r=>r.tongDiesel))}</td>
-          <td>${fmtL(sumBy(sub,r=>r.km))}</td><td>${fmtL(sumBy(sub,r=>r.tieuHaoThuc))}</td><td></td><td></td><td></td><td></td></tr>`;
+          <td>${fmtL(sumBy(sub,r=>r.km))}</td><td>${fmtL(sumBy(sub,r=>r.tieuHaoThuc))}</td><td></td><td></td><td></td></tr>`;
         return `<table class="rpt-grid">${head}${body}${foot}</table>`;
       };
       return { note:'L/km (phiếu bơm) = Diesel từ téc ÷ KM theo phiếu bơm. "Định mức bơm bom" lấy từ Danh mục & Xe. Thay đổi L/km so tháng trước: đỏ = tăng, xanh = giảm. Các cột nhập tay (dầu tồn thủ kho, KM đồng hồ, số chuyến…) nằm trong bản Excel để kế toán điền.',
@@ -2160,7 +2162,7 @@
           '','',                                  // H,I KM đồng hồ đầu/cuối — nhập tay
           '','',                                  // J,K = I−H, J−G — nhập tay
           '','',                                  // L,M bơm bom, số chuyến — nhập tay
-          r.dinhMucBom==null?'':N(r.dinhMucBom),  // N định mức bơm bom
+          '',                                     // N định mức bơm bom — nhập tay
           N(r.dieselTec),                         // O bơm đầu xe (diesel xuất nội bộ từ téc)
           r.lPerKm==null?'':N(r.lPerKm),          // P tỷ lệ theo phiếu bơm = O/G
           '',                                     // Q theo đồng hồ (cần J) — nhập tay
