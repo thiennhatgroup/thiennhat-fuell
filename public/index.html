@@ -571,7 +571,14 @@
     function statusCell(active){ return active?'<span class="badge">Hoạt động</span>':'<span class="muted">Ngừng</span>'; }
     function rowActions(kind, r){
       return `<button class="ghost sm" data-edit="${r.id}">Sửa</button>
-        <button class="ghost sm" data-toggle="${r.id}" data-active="${r.active?1:0}">${r.active?'Ngừng':'Bật'}</button>`;
+        <button class="ghost sm" data-toggle="${r.id}" data-active="${r.active?1:0}">${r.active?'Ngừng':'Bật'}</button>`
+        + (kind!=='txnType' ? `<button class="ghost sm" data-catdel="${r.id}" style="color:var(--danger)">Xóa</button>` : '');
+    }
+    async function catDelete(kind, id){
+      if(!confirm('Xóa vĩnh viễn mục này? Nếu đã có dữ liệu liên quan sẽ không xóa được — hãy dùng "Ngừng".')) return;
+      try{ await call('rpc_catalog_delete',{ p_kind:kind, p_id:id }); toast('Đã xóa.');
+        state.catalog=await call('rpc_catalog_list'); renderCatTab(); }
+      catch(err){ toast(err.message); }
     }
     async function catToggle(kind, id, active){
       try{ await call('rpc_catalog_toggle',{ p_kind:kind, p_id:id, p_active:!active }); toast('Đã cập nhật.');
@@ -713,6 +720,7 @@
     function wireEditToggle(body, kind){
       body.querySelectorAll('[data-edit]').forEach(b=> b.onclick=()=>{ state.catEdit=b.dataset.edit; renderCatTab(); });
       body.querySelectorAll('[data-toggle]').forEach(b=> b.onclick=()=>catToggle(kind, b.dataset.toggle, b.dataset.active==='1'));
+      body.querySelectorAll('[data-catdel]').forEach(b=> b.onclick=()=>catDelete(kind, b.dataset.catdel));
       ['tCancel','vCancel','oCancel','sCancel','xCancel'].forEach(id=>{
         const c=document.getElementById(id); if(c) c.onclick=()=>{ state.catEdit=null; renderCatTab(); };
       });
