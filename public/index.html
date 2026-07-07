@@ -74,7 +74,8 @@
   <div id="appView" class="hidden">
     <header>
       <h1>TN — Tồn kho Xăng dầu</h1>
-      <div class="row" style="flex:0">
+      <div class="row" style="flex:0;align-items:center">
+        <button class="ghost sm hidden" id="alertBell" title="Cảnh báo tồn" style="flex:0">🔔</button>
         <span id="userBadge" class="badge"></span>
         <button class="ghost sm" id="logoutBtn">Đăng xuất</button>
       </div>
@@ -105,6 +106,7 @@
       ['nhapReview','Đối chiếu nhập',   'pump:review',    'S4'],
       ['inventory', 'Tồn kho',          'inventory:read', 'S5'],
       ['adjust',    'Tịnh téc / Kiểm kê','adjust:manage',  'S6'],
+      ['alerts',    'Cảnh báo',         'alert:read',     'S7'],
       ['report',    'Báo cáo tháng',    'report:read',    'S8'],
       ['catalog',   'Danh mục & Xe',    'catalog:manage', 'S1'],
       ['users',     'Tài khoản',        'user:manage',    '']
@@ -158,6 +160,7 @@
         const allowed=visibleScreens();
         if(!allowed.some(s=>s[0]===state.screen)) state.screen=allowed[0][0];
         renderNav(); renderScreen();
+        if(can('alert:read')){ call('rpc_alerts_scan').then(()=>refreshAlertBell()).catch(()=>refreshAlertBell()); }
       }catch(err){
         document.getElementById('loginView').classList.remove('hidden');
         document.getElementById('appView').classList.add('hidden');
@@ -184,6 +187,7 @@
       if(state.screen==='nhapReview') return renderNhapReview(el);
       if(state.screen==='inventory') return renderInventory(el);
       if(state.screen==='adjust') return renderAdjust(el);
+      if(state.screen==='alerts') return renderAlerts(el);
       // Placeholder cho các slice chưa build
       el.innerHTML=`<div class="panel soon"><div class="big">🛠️</div>
         <h2>${esc(scr[1])}</h2>
@@ -899,7 +903,11 @@
     // ---- Màn Tồn kho thời gian thực (ThuKho + KeToan) ----
     async function renderInventory(el){
       el.innerHTML='<div class="panel muted">Đang tải…</div>';
-      try{ state.stock=(await call('rpc_inventory_stock')).rows||[]; renderInventoryUI(el); }
+      try{
+        state.stock=(await call('rpc_inventory_stock')).rows||[]; renderInventoryUI(el);
+        // Quét cảnh báo dựa trên tồn vừa tải (nền, không chặn giao diện).
+        call('rpc_alerts_scan').then(()=>refreshAlertBell()).catch(()=>{});
+      }
       catch(err){ el.innerHTML=`<div class="panel"><span class="msg">${esc(err.message)}</span></div>`; }
     }
     function invFlag(r){
@@ -1050,6 +1058,106 @@
       showModal('Phân bổ tịnh cho xe', body);
     }
 
+    // ---- Cảnh báo tồn + Web Push (S7) ----
+    const ALERT_ICON={ ton_am:'⛔', vuot_suc_chua:'⚠️', ton_thap:'🔻' };
+    function alertColor(level){ return level==='danger'?'var(--danger)':'#B26B00'; }
+
+    async function refreshAlertBell(){
+      const bell=document.getElementById('alertBell');
+      if(!bell || !can('alert:read')){ if(bell) bell.classList.add('hidden'); return; }
+      bell.classList.remove('hidden');
+      try{
+        const res=await call('rpc_alerts_list',{ p_limit:1 });
+        const n=Number(res.unread)||0;
+        bell.textContent = n>0 ? `🔔 ${n>99?'99+':n}` : '🔔';
+        bell.style.color = n>0 ? 'var(--danger)' : '';
+      }catch(_e){}
+    }
+
+    async function renderAlerts(el){
+      el.innerHTML='<div class="panel muted">Đang tải…</div>';
+      try{
+        const res=await call('rpc_alerts_list',{ p_limit:100 });
+        state.alerts=res.rows||[];
+        renderAlertsUI(el, res.unread||0);
+        refreshAlertBell();
+      }catch(err){ el.innerHTML=`<div class="panel"><span class="msg">${esc(err.message)}</span></div>`; }
+    }
+    function renderAlertsUI(el, unread){
+      const rows=state.alerts||[];
+      const list = rows.length
+        ? rows.map(r=>`<div class="panel" style="margin-bottom:10px;border-left:4px solid ${alertColor(r.level)};${r.read?'opacity:.6':''}">
+            <div class="row" style="align-items:center">
+              <div style="flex:1"><b>${ALERT_ICON[r.kind]||'•'} ${esc(r.title)}</b>
+                ${r.read?'':'<span class="badge" style="background:var(--danger);color:#fff">mới</span>'}
+                <div class="muted" style="margin-top:2px">${esc(r.body)}</div>
+                <div class="muted" style="font-size:12px;margin-top:4px">${esc(r.createdAt)}</div></div>
+              ${r.read?'':`<button class="ghost sm" data-read="${r.id}" style="flex:0">Đã đọc</button>`}
+            </div></div>`).join('')
+        : '<div class="panel muted">Chưa có cảnh báo nào. Tồn kho đang trong ngưỡng an toàn.</div>';
+      el.innerHTML=`<div class="panel"><div class="row" style="align-items:center">
+          <h2 style="flex:1;margin:0">Cảnh báo tồn</h2>
+          ${unread>0?'<button class="ghost sm" id="alRead" style="flex:0">Đánh dấu đã đọc hết</button>':''}
+          <button class="ghost sm" id="alReload" style="flex:0">Tải lại</button></div>
+        <p class="muted" style="margin-top:4px">Tồn âm · vượt sức chứa · dưới điểm đặt hàng. Tối đa 1 cảnh báo / loại / téc / ngày.</p>
+        <div id="pushBox"></div></div>
+        ${list}`;
+      document.getElementById('alReload').onclick=()=>renderAlerts(el);
+      const allBtn=document.getElementById('alRead');
+      if(allBtn) allBtn.onclick=async()=>{ try{ await call('rpc_alerts_mark_read',{}); renderAlerts(el); }catch(err){ toast(err.message); } };
+      el.querySelectorAll('[data-read]').forEach(b=> b.onclick=async()=>{
+        try{ await call('rpc_alerts_mark_read',{ p_id:b.dataset.read }); renderAlerts(el); }catch(err){ toast(err.message); } });
+      renderPushBox();
+    }
+
+    // --- Web Push ---
+    function pushSupported(){ return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window; }
+    function urlBase64ToUint8Array(base64){
+      const pad='='.repeat((4-base64.length%4)%4);
+      const b64=(base64+pad).replace(/-/g,'+').replace(/_/g,'/');
+      const raw=atob(b64); const out=new Uint8Array(raw.length);
+      for(let i=0;i<raw.length;i++) out[i]=raw.charCodeAt(i);
+      return out;
+    }
+    async function currentPushSub(){
+      if(!pushSupported()) return null;
+      const reg=await navigator.serviceWorker.ready;
+      return reg.pushManager.getSubscription();
+    }
+    async function renderPushBox(){
+      const box=document.getElementById('pushBox'); if(!box) return;
+      if(!APP.vapidPublicKey){ box.innerHTML='<p class="muted" style="font-size:13px">Web Push chưa cấu hình (thiếu VAPID). Cảnh báo vẫn hiện trong app.</p>'; return; }
+      if(!pushSupported()){ box.innerHTML='<p class="muted" style="font-size:13px">Trình duyệt/thiết bị này không hỗ trợ push. iOS cần cài PWA vào màn hình chính.</p>'; return; }
+      const sub=await currentPushSub();
+      box.innerHTML = sub
+        ? '<button class="ghost sm" id="pushOff" style="flex:0">Tắt thông báo đẩy trên thiết bị này</button>'
+        : '<button class="sm" id="pushOn" style="flex:0">🔔 Bật thông báo đẩy trên thiết bị này</button>';
+      const on=document.getElementById('pushOn'), off=document.getElementById('pushOff');
+      if(on) on.onclick=enablePush;
+      if(off) off.onclick=disablePush;
+    }
+    async function enablePush(){
+      try{
+        const perm=await Notification.requestPermission();
+        if(perm!=='granted'){ toast('Bạn chưa cho phép thông báo.'); return; }
+        const reg=await navigator.serviceWorker.ready;
+        const sub=await reg.pushManager.subscribe({ userVisibleOnly:true,
+          applicationServerKey:urlBase64ToUint8Array(APP.vapidPublicKey) });
+        const j=sub.toJSON();
+        await call('rpc_push_subscribe',{ p_endpoint:sub.endpoint,
+          p_p256dh:j.keys&&j.keys.p256dh, p_auth:j.keys&&j.keys.auth, p_user_agent:navigator.userAgent });
+        toast('Đã bật thông báo đẩy.'); renderPushBox();
+      }catch(err){ toast('Không bật được push: '+(err.message||err)); }
+    }
+    async function disablePush(){
+      try{
+        const sub=await currentPushSub();
+        if(sub){ await call('rpc_push_unsubscribe',{ p_endpoint:sub.endpoint }); await sub.unsubscribe(); }
+        toast('Đã tắt thông báo đẩy.'); renderPushBox();
+      }catch(err){ toast('Không tắt được push: '+(err.message||err)); }
+    }
+
+    document.getElementById('alertBell').onclick=()=>{ state.screen='alerts'; renderNav(); renderScreen(); };
     document.getElementById('loginBtn').onclick=login;
     document.getElementById('logoutBtn').onclick=logout;
     document.getElementById('loginPin').addEventListener('keydown',e=>{ if(e.key==='Enter') login(); });
