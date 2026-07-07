@@ -58,6 +58,12 @@
     .row{display:flex;gap:10px;flex-wrap:wrap}
     .row>*{flex:1;min-width:140px}
     label{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px;font-weight:600}
+    label .rq{color:var(--danger);font-weight:800;margin-left:2px}
+    /* Trường bắt buộc: nền vàng nhạt + viền vàng cho tới khi focus. */
+    input.req,select.req,textarea.req{background:#FFFBEB;border-color:#E6C200}
+    input.req:focus,select.req:focus,textarea.req:focus{background:#fff;border-color:var(--accent)}
+    /* Dòng hướng dẫn nhập dưới mỗi trường. */
+    .fnote{font-size:12px;color:var(--muted);margin:4px 0 2px;line-height:1.35}
     .hidden{display:none!important}
     /* ---- Sub-tab nav (catalog) ---- */
     .nav{display:flex;gap:8px;overflow-x:auto;padding:10px 16px;background:#fff;border-bottom:1px solid var(--line);position:sticky;top:57px;z-index:10}
