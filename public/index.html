@@ -261,7 +261,7 @@
     const SCREENS = [
       ['home',      'Trang chủ',        null,             ''],
       ['pump',      'Nhập bơm',         'pump:create',    'S2'],
-      ['review',    'Đối chiếu bơm',    'pump:review',    'S2'],
+      ['review',    'Đối chiếu phiếu',  'ledger:flag',    'S2'],
       ['nhap',      'Phiếu nhập',       'pump:create',    'S4'],
       ['nhapReview','Đối chiếu nhập',   'pump:review',    'S4'],
       ['inventory', 'Tồn kho',          'inventory:read', 'S5'],
@@ -272,13 +272,16 @@
       ['catalog',   'Danh mục & Xe',    'catalog:manage', 'S1'],
       ['users',     'Tài khoản',        'user:manage',    '']
     ];
-    const ROLE_LABELS = { ThuKho:'Thủ kho', KeToan:'Kế toán', Admin:'Admin' };
+    const ROLE_LABELS = { ThuKho:'Thủ kho', KeToan:'Kế toán tổng hợp', TruongBoPhan:'Trưởng bộ phận', Admin:'Admin' };
     // Thứ tự màn ưu tiên theo vai trò (drawer + tab-bar). Màn không liệt kê xếp sau.
-    // Ưu tiên nghiệp vụ: Bơm → Nhập → Tồn kho → Tịnh téc → Báo cáo → Đối chiếu bơm.
+    // Phân quyền theo mục: Thủ kho → 1 Bơm, 2 Nhập, 3 Tồn kho.
+    // Trưởng bộ phận + Kế toán → 3 Tồn kho, 4 Tịnh téc, 5 Báo cáo, 6 Đối chiếu phiếu + Danh mục.
+    // Admin → tất cả (gồm 7 Sửa phiếu).
     const ROLE_MENU_ORDER = {
-      ThuKho: ['home','pump','nhap','inventory','adjust','report','review'],
-      KeToan: ['home','pump','nhap','inventory','adjust','report','review','catalog'],
-      Admin:  ['home','pump','nhap','inventory','adjust','report','review','adminLedger','catalog','users']
+      ThuKho:       ['home','pump','nhap','inventory'],
+      TruongBoPhan: ['home','inventory','adjust','report','review','catalog'],
+      KeToan:       ['home','inventory','adjust','report','review','catalog'],
+      Admin:        ['home','pump','nhap','inventory','adjust','report','review','adminLedger','catalog','users']
     };
     // Màn vẫn truy cập được (qua chuông/deep-link) nhưng KHÔNG hiện trong menu drawer/tab.
     const MENU_HIDDEN = ['nhapReview','alerts'];
@@ -479,8 +482,8 @@
           ${items.map(s=>`<button class="ghost" data-go="${s[0]}">${esc(s[1])}${s[3]?` <span class="muted">(${s[3]})</span>`:''}</button>`).join('')}
         </div>
       </div>
-      <div class="panel"><b>Nền tảng S0 đã sẵn sàng.</b>
-        <p class="muted">Đăng nhập email+PIN, phân quyền theo vai trò (Thủ kho / Kế toán / Admin), quản tài khoản. Các nghiệp vụ xăng dầu sẽ bổ sung theo từng lát S1→S9.</p></div>`;
+      <div class="panel"><b>Hệ thống tồn kho xăng dầu.</b>
+        <p class="muted">Đăng nhập email+PIN, phân quyền theo vai trò (Thủ kho / Trưởng bộ phận / Kế toán tổng hợp / Admin). Chọn chức năng theo quyền của bạn ở trên.</p></div>`;
       el.querySelectorAll('[data-go]').forEach(b=> b.onclick=()=>navTo(b.dataset.go));
     }
 
@@ -495,7 +498,8 @@
         <div class="row">
           <div><label>Vai trò</label><select id="uRole">
             <option value="ThuKho">Thủ kho</option>
-            <option value="KeToan">Kế toán</option>
+            <option value="TruongBoPhan">Trưởng bộ phận</option>
+            <option value="KeToan">Kế toán tổng hợp</option>
             <option value="Admin">Admin</option>
           </select></div>
           <div><label>Mã PIN (≥4 số)</label><input id="uPin" inputmode="numeric" placeholder="••••"></div>
@@ -756,6 +760,7 @@
 
     function renderPumpUI(el){
       const a=state.active, e=(state.pumpEdit&&state.pumpMine.find(r=>r.id===state.pumpEdit&&r.status==='Nhap'))||null;
+      if(!state.pumpStage) state.pumpStage={};
       const txns=(a.txnTypes||[]).filter(t=>t.kind!=='nhap');
       const veh=a.vehicles||[], tanks=a.tanks||[], oils=a.oilTypes||[], sups=a.suppliers||[];
       const sel=(id,v)=>v&&v===id?'selected':'';
@@ -796,16 +801,19 @@
           <div class="fnote">Nơi mua dầu khi Bơm ngoài. Chỉ hiện khi chọn loại Bơm ngoài.</div></div>
         <label>Ghi chú</label><input id="pNote" value="${e&&e.note?esc(e.note):''}">
         <div class="fnote">Không bắt buộc. Ghi thêm thông tin bất thường của lần bơm.</div>
-        <div class="row" style="margin-top:12px;flex:0">
-          <button id="pSave" style="flex:0">${e?'Lưu':'Thêm phiếu'}</button>
+        <div id="photoWrap" style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">
+          <label>Ảnh chứng từ <span class="rq">*</span></label>
+          <div class="fnote">Ảnh đồng hồ bơm (bắt buộc) và ảnh công-tơ-mét (nếu xe có công-tơ-mét). Chọn ảnh rồi bấm <b>Lưu phiếu</b> — hệ thống lưu phiếu kèm ảnh vào danh sách bên dưới.</div>
+          <div id="photoBox" style="margin-top:8px"></div>
+        </div>
+        <div class="row" style="margin-top:14px;flex:0">
+          <button id="pSave" style="flex:0">${e?'Lưu':'Lưu phiếu'}</button>
           ${e?'<button class="ghost" id="pCancel" style="flex:0">Hủy</button>':''}
         </div><div id="pMsg" class="msg"></div>
       </div>
-      ${e?`<div class="panel"><h2>Ảnh chứng từ</h2>
-        <p class="muted" style="margin-top:-6px">Bắt buộc ảnh đồng hồ bơm; ảnh công-tơ-mét bắt buộc khi xe có công-tơ-mét. Chụp trước khi Submit ngày.</p>
-        <div id="photoBox" class="muted">Đang tải ảnh…</div></div>`:''}
-      <div class="panel"><div class="row" style="align-items:center"><h2 style="flex:1;margin:0">Phiếu của tôi</h2>
+      <div class="panel"><div class="row" style="align-items:center"><h2 style="flex:1;margin:0">Phiếu đã lưu</h2>
         <button id="pSubmit" class="sm" style="flex:0">Submit ngày</button></div>
+        <div class="fnote" style="margin-top:2px">Bấm vào một phiếu để xem chi tiết và ảnh. Submit ngày để duyệt cả lô vào tồn kho.</div>
         <div id="pList" style="margin-top:12px"></div></div>`;
 
       const setKindUI=()=>{
@@ -830,18 +838,18 @@
       document.getElementById('pTxn').onchange=setKindUI;
       document.getElementById('pKmNew').oninput=kmHint;
       document.getElementById('pVeh').onchange=async(ev)=>{
-        setKmUI();
+        setKmUI(); renderPumpPhotoBox(e);
         if(e) return; // sửa thì giữ nguyên KM cũ đã có
         const vid=ev.target.value; if(!vid){ document.getElementById('pKmOld').value=''; kmHint(); return; }
         try{ const r=await call('rpc_vehicle_last_km',{p_vehicle_id:vid});
           document.getElementById('pKmOld').value=r.kmOld!=null?r.kmOld:''; kmHint(); }catch(_){}
       };
       setKindUI(); setKmUI(); kmHint();
-      document.getElementById('pSave').onclick=function(){ withBusy(this, e?'Đang lưu…':'Đang thêm…', ()=>savePump(e, el)); };
+      document.getElementById('pSave').onclick=function(){ withBusy(this, e?'Đang lưu…':'Đang lưu phiếu…', ()=>savePump(e, el)); };
       document.getElementById('pSubmit').onclick=function(){ withBusy(this,'Đang submit…',()=>submitPumpDay(el)); };
-      const c=document.getElementById('pCancel'); if(c) c.onclick=()=>{ state.pumpEdit=null; renderPumpUI(el); };
+      const c=document.getElementById('pCancel'); if(c) c.onclick=()=>{ state.pumpEdit=null; state.pumpStage={}; renderPumpUI(el); };
       renderPumpList();
-      if(e) renderPhotoSection(e.id, e.vehicleId, monthOf(e.entryDate));
+      renderPumpPhotoBox(e);
     }
 
     function vehHasOdo(vehicleId){
@@ -859,47 +867,57 @@
       return `${ym}/${ledgerId}/${kind}-${Date.now()}.${ext}`;
     }
     const KIND_LABEL={ pump_meter:'Ảnh đồng hồ bơm', odometer:'Ảnh công-tơ-mét' };
-    async function renderPhotoSection(ledgerId, vehicleId, ym){
-      const box=document.getElementById('photoBox'); if(!box) return;
-      let photos=[];
-      try{ photos=(await call('rpc_pump_photo_list',{p_ledger_id:ledgerId})).rows||[]; }
-      catch(err){ box.innerHTML=`<span class="msg">${esc(err.message)}</span>`; return; }
+    function pumpSlots(vehicleId){
       const slots=[['pump_meter',true]];
       if(vehHasOdo(vehicleId)) slots.push(['odometer',true]);
+      return slots;
+    }
+    // Ô ảnh ngay trong thẻ phiếu: ảnh đang chọn (chờ lưu) / ảnh đã tải lên (khi sửa) / ô chọn ảnh.
+    async function renderPumpPhotoBox(e){
+      const box=document.getElementById('photoBox'); if(!box) return;
+      const vehicleId = val('pVeh') || (e&&e.vehicleId) || null;
+      const slots=pumpSlots(vehicleId);
+      let uploaded=[];
+      if(e){ try{ uploaded=(await call('rpc_pump_photo_list',{p_ledger_id:e.id})).rows||[]; }catch(_){} }
       const parts=[];
-      for(const [kind] of slots){
-        const p=photos.find(x=>x.kind===kind);
-        if(p){
-          const url=await signedUrl(p.path);
+      for(const [kind,req] of slots){
+        const staged=state.pumpStage[kind];
+        const up=uploaded.find(x=>x.kind===kind);
+        if(staged){
+          const url=URL.createObjectURL(staged);
+          parts.push(`<div style="flex:1;min-width:160px"><label>${KIND_LABEL[kind]}</label>
+            <img class="thumb" src="${url}"><div style="margin-top:6px"><button class="ghost sm" data-unstage="${kind}">Bỏ ảnh</button></div></div>`);
+        }else if(up){
+          const url=await signedUrl(up.path);
           parts.push(`<div style="flex:1;min-width:160px"><label>${KIND_LABEL[kind]}</label>
             ${url?`<a href="${esc(url)}" target="_blank"><img class="thumb" src="${esc(url)}"></a>`:'<div class="muted">Đã có ảnh.</div>'}
-            <div style="margin-top:6px"><button class="ghost sm" data-delphoto="${p.id}">Xóa ảnh</button></div></div>`);
+            <div style="margin-top:6px"><button class="ghost sm" data-delphoto="${up.id}">Xóa ảnh</button></div></div>`);
         }else{
-          parts.push(`<div style="flex:1;min-width:160px"><label>${KIND_LABEL[kind]} <span style="color:var(--danger)">*</span></label>
-            <input type="file" accept="image/*" capture="environment" data-kind="${kind}"></div>`);
+          parts.push(`<div style="flex:1;min-width:160px"><label>${KIND_LABEL[kind]} ${req?'<span class="rq">*</span>':''}</label>
+            <input type="file" accept="image/*" capture="environment" data-stage="${kind}"></div>`);
         }
       }
       box.innerHTML=`<div class="row">${parts.join('')}</div><div id="photoMsg" class="msg"></div>`;
-      box.querySelectorAll('input[type=file]').forEach(inp=> inp.onchange=()=>uploadPhoto(ledgerId, vehicleId, ym, inp.dataset.kind, inp.files[0]));
-      box.querySelectorAll('[data-delphoto]').forEach(b=> b.onclick=()=>deletePhoto(ledgerId, vehicleId, ym, b.dataset.delphoto));
+      box.querySelectorAll('input[type=file]').forEach(inp=> inp.onchange=()=>{ if(inp.files[0]){ state.pumpStage[inp.dataset.stage]=inp.files[0]; renderPumpPhotoBox(e); } });
+      box.querySelectorAll('[data-unstage]').forEach(b=> b.onclick=()=>{ delete state.pumpStage[b.dataset.unstage]; renderPumpPhotoBox(e); });
+      box.querySelectorAll('[data-delphoto]').forEach(b=> b.onclick=()=>deletePumpPhoto(e, b.dataset.delphoto));
     }
-    async function uploadPhoto(ledgerId, vehicleId, ym, kind, file){
-      if(!file) return;
-      const msg=document.getElementById('photoMsg'); if(msg){ msg.style.color='var(--muted)'; msg.textContent='Đang tải ảnh…'; }
-      try{
+    // Tải các ảnh đang chờ (state.pumpStage) lên cho phiếu vừa lưu, rồi xóa khỏi hàng chờ.
+    async function uploadStagedPumpPhotos(ledgerId, vehicleId, ym){
+      for(const [kind] of pumpSlots(vehicleId)){
+        const file=state.pumpStage[kind]; if(!file) continue;
         const path=photoPath(ym, ledgerId, kind, file);
         const {error}=await sb.storage.from('chung-tu').upload(path, file, {contentType:file.type||'image/jpeg', upsert:false});
         if(error) throw error;
         await call('rpc_pump_photo_add',{p_ledger_id:ledgerId, p_kind:kind, p_path:path});
-        toast('Đã thêm ảnh.'); renderPhotoSection(ledgerId, vehicleId, ym);
-      }catch(err){ if(msg){ msg.style.color='var(--danger)'; msg.textContent=err.message||'Tải ảnh thất bại.'; } }
+      }
     }
-    async function deletePhoto(ledgerId, vehicleId, ym, photoId){
+    async function deletePumpPhoto(e, photoId){
       if(!confirm('Xóa ảnh này?')) return;
       try{
         const r=await call('rpc_pump_photo_delete',{p_id:photoId});
         if(r&&r.path){ try{ await sb.storage.from('chung-tu').remove([r.path]); }catch(_){} }
-        toast('Đã xóa ảnh.'); renderPhotoSection(ledgerId, vehicleId, ym);
+        toast('Đã xóa ảnh.'); renderPumpPhotoBox(e);
       }catch(err){ toast(err.message); }
     }
 
@@ -917,36 +935,62 @@
       const msg=document.getElementById('pMsg'); msg.textContent='';
       try{
         const res=await call(e?'rpc_pump_update':'rpc_pump_create', pumpParams(e));
-        toast(e?'Đã lưu phiếu.':'Đã thêm phiếu. Bổ sung ảnh chứng từ.');
-        state.pumpEdit=(e&&e.id)||(res&&res.id)||null;  // ở lại chế độ sửa để đính ảnh
-        await loadPumpMine(); renderPumpUI(el);
-        if(state.pumpEdit) window.scrollTo(0,0);
+        const id=(e&&e.id)||(res&&res.id);
+        const vehicleId=val('pVeh')||(e&&e.vehicleId);
+        const ym=monthOf(val('pDate')||(e&&e.entryDate));
+        if(id){ try{ await uploadStagedPumpPhotos(id, vehicleId, ym); }
+          catch(upErr){ state.pumpEdit=id; state.pumpStage={}; await loadPumpMine(); renderPumpUI(el);
+            document.getElementById('pMsg').textContent='Đã lưu phiếu nhưng tải ảnh lỗi: '+(upErr.message||upErr); window.scrollTo(0,0); return; } }
+        toast(e?'Đã lưu phiếu.':'Đã lưu phiếu kèm ảnh.');
+        state.pumpEdit=null; state.pumpStage={};   // quay về form mới cho phiếu kế tiếp
+        await loadPumpMine(); renderPumpUI(el); window.scrollTo(0,0);
       }catch(err){ msg.textContent=err.message; }
     }
     async function submitPumpDay(el){
-      if(!confirm('Submit toàn bộ phiếu Nháp để chuyển sang Chờ đối chiếu?')) return;
-      try{ const r=await call('rpc_pump_submit_day'); toast(`Đã submit ${r.count} phiếu.`);
+      if(!confirm('Submit toàn bộ phiếu Nháp? Phiếu sẽ được duyệt thẳng và vào tồn kho ngay.')) return;
+      try{ const r=await call('rpc_pump_submit_day'); toast(`Đã nhập & duyệt ${r.count} phiếu vào tồn.`);
         await loadPumpMine(); renderPumpUI(el); }
       catch(err){ toast(err.message); }
     }
     function renderPumpList(){
       const box=document.getElementById('pList'); const rows=state.pumpMine||[];
-      if(!rows.length){ box.innerHTML='<span class="muted">Chưa có phiếu.</span>'; return; }
+      if(!rows.length){ box.innerHTML='<span class="muted">Chưa có phiếu. Điền form phía trên rồi bấm Lưu phiếu.</span>'; return; }
       box.innerHTML=`<table><thead><tr><th>Số phiếu</th><th>Xe</th><th>Loại GD</th><th>Téc</th>
         <th>Lít</th><th>KM đi</th><th>Trạng thái</th><th></th></tr></thead><tbody>
         ${rows.map(r=>`<tr>
-          <td>${r.code?esc(r.code):'<span class="muted">(nháp)</span>'}${r.rejectReason?`<div class="msg" style="min-height:0">Trả về: ${esc(r.rejectReason)}</div>`:''}</td>
+          <td><a href="#" data-detail="${r.id}" style="color:var(--brand,#0E5AA7);font-weight:600">${r.code?esc(r.code):'(nháp)'}</a>${r.rejectReason?`<div class="msg" style="min-height:0">Trả về: ${esc(r.rejectReason)}</div>`:''}</td>
           <td>${esc(r.plate||'')}</td><td>${esc(r.txnName||'')}</td><td>${esc(r.tankName||'')}</td>
           <td>${fmtNum(r.liters)}</td><td>${r.kmRun!=null?fmtNum(r.kmRun):''}</td>
           <td><span class="badge">${STATUS_LABEL[r.status]||esc(r.status)}</span></td>
-          <td style="white-space:nowrap">${r.status==='Nhap'
-            ? `<button class="ghost sm" data-edit="${r.id}">Sửa</button><button class="ghost sm" data-del="${r.id}">Xóa</button>`
-            : `<button class="ghost sm" data-withdraw="${r.id}">Rút lại</button>`}</td>
+          <td style="white-space:nowrap">
+            <button class="ghost sm" data-detail="${r.id}">Chi tiết</button>
+            ${r.status==='Nhap' ? `<button class="ghost sm" data-edit="${r.id}">Sửa</button><button class="ghost sm" data-del="${r.id}">Xóa</button>`:''}</td>
         </tr>`).join('')}</tbody></table>`;
       const el=document.getElementById('screen');
-      box.querySelectorAll('[data-edit]').forEach(b=> b.onclick=()=>{ state.pumpEdit=b.dataset.edit; renderPumpUI(el); window.scrollTo(0,0); });
+      box.querySelectorAll('[data-edit]').forEach(b=> b.onclick=()=>{ state.pumpEdit=b.dataset.edit; state.pumpStage={}; renderPumpUI(el); window.scrollTo(0,0); });
       box.querySelectorAll('[data-del]').forEach(b=> b.onclick=()=>delPump(b.dataset.del, el));
-      box.querySelectorAll('[data-withdraw]').forEach(b=> b.onclick=()=>withdrawPump(b.dataset.withdraw, el));
+      box.querySelectorAll('[data-detail]').forEach(b=> b.onclick=(ev)=>{ ev.preventDefault(); pumpDetail((state.pumpMine||[]).find(x=>x.id===b.dataset.detail)); });
+    }
+    // Chi tiết phiếu bơm + ảnh (đọc từ danh sách của tôi).
+    async function pumpDetail(r){
+      if(!r) return;
+      const rowsHtml=[
+        ['Số phiếu', r.code||'(nháp)'], ['Ngày', r.entryDate||''], ['Xe', r.plate||''],
+        ['Loại giao dịch', r.txnName||''], ['Téc', r.tankName||''], ['Loại dầu', r.oilTypeName||''],
+        ['Số lít', fmtNum(r.liters)], ['KM cũ', r.kmOld!=null?fmtNum(r.kmOld):''],
+        ['KM mới', r.kmNew!=null?fmtNum(r.kmNew):''], ['KM đi', r.kmRun!=null?fmtNum(r.kmRun):''],
+        ['Trạng thái', STATUS_LABEL[r.status]||r.status], ['Ghi chú', r.note||'']
+      ].map(([k,v])=>`<tr><td class="muted" style="padding:2px 12px 2px 0;white-space:nowrap">${esc(k)}</td><td>${esc(v)}</td></tr>`).join('');
+      showModal('Phiếu '+(r.code||'(nháp)'), `<table class="line-table">${rowsHtml}</table><div id="pdPhotos" class="muted" style="margin-top:10px">Đang tải ảnh…</div>`);
+      let photos=[];
+      try{ photos=(await call('rpc_pump_photo_list',{p_ledger_id:r.id})).rows||[]; }catch(_){}
+      const pbox=document.getElementById('pdPhotos'); if(!pbox) return;
+      if(!photos.length){ pbox.innerHTML='<span class="muted">Chưa có ảnh.</span>'; return; }
+      const parts=[];
+      for(const p of photos){ const url=await signedUrl(p.path);
+        parts.push(`<div style="flex:1;min-width:200px"><label>${KIND_LABEL[p.kind]||esc(p.kind)}</label>
+          ${url?`<a href="${esc(url)}" target="_blank"><img class="thumb" style="max-height:none" src="${esc(url)}"></a>`:'<span class="muted">Không tải được ảnh.</span>'}</div>`); }
+      pbox.innerHTML=`<div class="row">${parts.join('')}</div>`;
     }
     async function delPump(id, el){
       if(!confirm('Xóa phiếu nháp này?')) return;
@@ -958,45 +1002,86 @@
       catch(err){ toast(err.message); }
     }
 
-    // ---- Màn Đối chiếu chéo (ThuKho khác người tạo) ----
+    // ---- Mục 6: Đối chiếu phiếu (Trưởng bộ phận / Kế toán) — xem lại + ảnh + nhờ Admin sửa ----
+    const REVIEW_KIND_LABEL={ pump_meter:'Ảnh đồng hồ bơm', odometer:'Ảnh công-tơ-mét',
+      bien_ban_giao_nhan:'Ảnh biên bản giao nhận', phieu_nhap_kho:'Ảnh phiếu nhập kho', receipt:'Ảnh chứng từ' };
     async function renderReview(el){
       el.innerHTML=`<div class="panel">${loadingText()}</div>`;
-      try{ const rows=(await call('rpc_pump_review_queue')).rows||[];
-        el.innerHTML=`<div class="panel"><h2>Hàng đợi đối chiếu</h2>
-          ${rows.length?`<table><thead><tr><th>Số phiếu</th><th>Người tạo</th><th>Xe</th><th>Loại GD</th>
-            <th>Téc</th><th>Lít</th><th>KM đi</th><th></th></tr></thead><tbody>
-            ${rows.map(r=>`<tr><td>${esc(r.code||'')}</td><td>${esc(r.createdBy||'')}</td>
-              <td>${esc(r.plate||'')}</td><td>${esc(r.txnName||'')}</td><td>${esc(r.tankName||'')}</td>
-              <td>${fmtNum(r.liters)}</td><td>${r.kmRun!=null?fmtNum(r.kmRun):''}</td>
-              <td style="white-space:nowrap">
-                <button class="ghost sm" data-photos="${r.id}">Ảnh</button>
-                <button class="sm" data-ok="${r.id}" style="background:var(--ok)">Khớp</button>
-                <button class="ghost sm" data-no="${r.id}">Lệch</button></td></tr>`).join('')}
-            </tbody></table>`:'<span class="muted">Không có phiếu chờ đối chiếu.</span>'}</div>`;
-        el.querySelectorAll('[data-photos]').forEach(b=> b.onclick=()=>viewPhotos(b.dataset.photos));
-        el.querySelectorAll('[data-ok]').forEach(b=> b.onclick=()=>reviewPump('rpc_pump_approve',{p_id:b.dataset.ok},el));
-        el.querySelectorAll('[data-no]').forEach(b=> b.onclick=()=>
-          promptReason('Trả về phiếu bơm (Lệch)','Nhập lý do lệch để người tạo sửa lại…',
-            reason=>reviewPump('rpc_pump_reject',{p_id:b.dataset.no,p_reason:reason},el),'Trả về'));
+      try{
+        await ensureActive();
+        if(!state.reviewFilter) state.reviewFilter={ days:'30', type:'', q:'' };
+        await loadReviewList(); renderReviewUI(el);
       }catch(err){ el.innerHTML=`<div class="panel"><span class="msg">${esc(err.message)}</span></div>`; }
     }
-    async function reviewPump(rpc, params, el){
-      try{ await call(rpc, params); toast('Đã xử lý phiếu.'); renderReview(el); }
-      catch(err){ toast(err.message); }
+    async function loadReviewList(){
+      const f=state.reviewFilter;
+      state.reviewRows=(await call('rpc_review_ledger_list',{ p_days:Number(f.days)||30, p_entry_type:f.type||null, p_q:f.q||null })).rows||[];
     }
-    async function viewPhotos(ledgerId){
-      let rows=[];
-      try{ rows=(await call('rpc_pump_photo_list',{p_ledger_id:ledgerId})).rows||[]; }
-      catch(err){ toast(err.message); return; }
-      if(!rows.length){ toast('Phiếu chưa có ảnh.'); return; }
-      showModal('Ảnh chứng từ', '<div class="muted">Đang tải ảnh…</div>');
+    function reviewFlagBadge(r){
+      if(r.flagged && (r.flagStatus||'open')==='open') return '<span class="badge" style="background:#B26B00;color:#fff">Đã gửi Admin</span>';
+      if(r.flagStatus==='resolved') return '<span class="badge" style="background:#1E8E5A;color:#fff">Admin đã sửa</span>';
+      return '';
+    }
+    function renderReviewUI(el){
+      const f=state.reviewFilter, rows=state.reviewRows||[];
+      const table = rows.length ? `<table><thead><tr>
+          <th>Ngày</th><th>Số phiếu</th><th>Loại</th><th>Xe/NCC</th><th>Téc</th><th>Số lít</th><th>Trạng thái</th></tr></thead><tbody>
+        ${rows.map(r=>`<tr>
+          <td>${esc(r.entryDate||'')}</td>
+          <td><a href="#" data-rvdetail="${r.id}" style="color:var(--brand,#0E5AA7);font-weight:600">${esc(r.code||'(nháp)')}</a></td>
+          <td>${r.entryType==='nhap'?'Nhập':'Bơm'}</td>
+          <td>${esc(r.entryType==='nhap'?(r.supplierName||''):(r.vehiclePlate||r.supplierName||''))}</td>
+          <td>${esc(r.tankName||'')}</td><td>${fmtNum(r.liters)}</td>
+          <td>${reviewFlagBadge(r)||'<span class="muted">—</span>'}</td>
+        </tr>`).join('')}</tbody></table>` : '<span class="muted">Không có phiếu đã duyệt trong khoảng đã chọn.</span>';
+      el.innerHTML=`<div class="panel"><h2>Đối chiếu phiếu</h2>
+        <p class="muted" style="margin-top:-6px">Xem lại phiếu đã duyệt và ảnh chứng từ. Nếu phát hiện sai, bấm vào phiếu rồi <b>Yêu cầu Admin sửa</b>.</p>
+        <div class="row">
+          <div><label>Khoảng ngày</label><select id="rvDays">
+            <option value="30">30 ngày</option><option value="60">60 ngày</option><option value="90">90 ngày</option></select></div>
+          <div><label>Loại phiếu</label><select id="rvType">
+            <option value="">Tất cả</option><option value="bom">Bơm</option><option value="nhap">Nhập</option></select></div>
+          <div style="flex:2"><label>Tìm (số phiếu, biển số, NCC, ghi chú)</label><input id="rvQ" value="${esc(f.q||'')}"></div>
+        </div>
+        <div style="margin-top:10px"><button id="rvApply" style="flex:0">Lọc</button></div>
+        <div style="margin-top:12px">${table}</div></div>`;
+      document.getElementById('rvDays').value=String(f.days);
+      document.getElementById('rvType').value=f.type||'';
+      document.getElementById('rvApply').onclick=function(){ withBusy(this,'Đang lọc…',async()=>{
+        state.reviewFilter={ days:val('rvDays'), type:val('rvType'), q:val('rvQ') };
+        await loadReviewList(); renderReviewUI(el);
+      }); };
+      el.querySelectorAll('[data-rvdetail]').forEach(b=> b.onclick=(ev)=>{ ev.preventDefault(); reviewDetail((state.reviewRows||[]).find(x=>x.id===b.dataset.rvdetail), el); });
+    }
+    async function reviewDetail(r, el){
+      if(!r) return;
+      const fields=[
+        ['Số phiếu', r.code||'(nháp)'], ['Ngày', r.entryDate||''],
+        ['Loại', r.entryType==='nhap'?'Nhập':'Bơm'],
+        ['Xe/NCC', r.entryType==='nhap'?(r.supplierName||''):(r.vehiclePlate||'')],
+        ['Loại giao dịch', r.txnName||''], ['Téc', r.tankName||''], ['Loại dầu', r.oilTypeName||''],
+        ['Số lít', fmtNum(r.liters)], ['KM đi', r.kmRun!=null?fmtNum(r.kmRun):''],
+        ['Người tạo', r.createdByName||''], ['Ghi chú', r.note||'']
+      ].map(([k,v])=>`<tr><td class="muted" style="padding:2px 12px 2px 0;white-space:nowrap">${esc(k)}</td><td>${esc(v)}</td></tr>`).join('');
+      const isOpen = r.flagged && (r.flagStatus||'open')==='open';
+      const flagInfo = isOpen ? `<div class="notice" style="margin-top:8px">Đã gửi Admin: ${esc(r.flagReason||'')}${r.flaggedByName?(' — '+esc(r.flaggedByName)):''}</div>` : '';
+      const onSave = isOpen ? null : function(){
+        promptReason('Yêu cầu Admin sửa phiếu '+(r.code||''), 'Nhập nội dung cần Admin sửa trên phiếu này…',
+          async reason=>{ await call('rpc_ledger_flag',{p_id:r.id, p_reason:reason}); toast('Đã gửi yêu cầu tới Admin.');
+            await loadReviewList(); renderReviewUI(el); }, 'Gửi Admin');
+      };
+      openModal('Phiếu '+(r.code||'(nháp)'),
+        `<table class="line-table">${fields}</table>${flagInfo}<div id="rvPhotos" class="muted" style="margin-top:10px">Đang tải ảnh…</div>`,
+        onSave, 'Yêu cầu Admin sửa');
+      let photos=[];
+      try{ photos=(await call('rpc_review_photo_list',{p_ledger_id:r.id})).rows||[]; }catch(_){}
+      const pbox=document.getElementById('rvPhotos'); if(!pbox) return;
+      if(!photos.length){ pbox.innerHTML='<span class="muted">Phiếu chưa có ảnh.</span>'; return; }
       const parts=[];
-      for(const p of rows){
-        const url=await signedUrl(p.path);
-        parts.push(`<div style="flex:1;min-width:200px"><label>${KIND_LABEL[p.kind]||esc(p.kind)}</label>
-          ${url?`<a href="${esc(url)}" target="_blank"><img class="thumb" style="max-height:none" src="${esc(url)}"></a>`:'<span class="muted">Không tải được ảnh.</span>'}</div>`);
-      }
-      showModal('Ảnh chứng từ', `<div class="row">${parts.join('')}</div>`);
+      for(const p of photos){ const url=await signedUrl(p.path);
+        parts.push(`<div style="flex:1;min-width:200px"><label>${REVIEW_KIND_LABEL[p.kind]||esc(p.kind)}</label>
+          ${url?`<a href="${esc(url)}" target="_blank"><img class="thumb" style="max-height:none" src="${esc(url)}"></a>`:'<span class="muted">Không tải được ảnh.</span>'}</div>`); }
+      pbox.innerHTML=`<div class="row">${parts.join('')}</div>`;
     }
     function showModal(title, html){
       const m=document.getElementById('modal');
@@ -1046,6 +1131,7 @@
 
     function renderNhapUI(el){
       const a=state.active, e=(state.nhapEdit&&state.nhapMine.find(r=>r.id===state.nhapEdit&&r.status==='Nhap'))||null;
+      if(!state.nhapStage) state.nhapStage={};
       const tanks=a.tanks||[], oils=a.oilTypes||[], sups=a.suppliers||[];
       const sel=(id,v)=>v&&v===id?'selected':'';
       const opt=(arr,idKey,labelKey,cur)=>arr.map(x=>`<option value="${x[idKey]}" ${sel(x[idKey],cur)}>${esc(x[labelKey])}</option>`).join('');
@@ -1079,16 +1165,19 @@
         </div>
         <label>Ghi chú</label><input id="nNote" value="${e&&e.note?esc(e.note):''}">
         <div class="fnote">Không bắt buộc. Ghi thêm thông tin bất thường của lô nhập.</div>
-        <div class="row" style="margin-top:12px;flex:0">
-          <button id="nSave" style="flex:0">${e?'Lưu':'Thêm phiếu'}</button>
+        <div id="nPhotoWrap" style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">
+          <label>Ảnh chứng từ <span class="rq">*</span></label>
+          <div class="fnote">Bắt buộc 2 ảnh: Biên bản giao nhận + Phiếu nhập kho. Chọn ảnh rồi bấm <b>Lưu phiếu</b> — hệ thống lưu phiếu kèm ảnh vào danh sách bên dưới.</div>
+          <div id="nPhotoBox" style="margin-top:8px"></div>
+        </div>
+        <div class="row" style="margin-top:14px;flex:0">
+          <button id="nSave" style="flex:0">${e?'Lưu':'Lưu phiếu'}</button>
           ${e?'<button class="ghost" id="nCancel" style="flex:0">Hủy</button>':''}
         </div><div id="nMsg" class="msg"></div>
       </div>
-      ${e?`<div class="panel"><h2>Ảnh chứng từ</h2>
-        <p class="muted" style="margin-top:-6px">Bắt buộc <b>2 ảnh</b>: Biên bản giao nhận + Phiếu nhập kho. Chụp trước khi Submit ngày.</p>
-        <div id="nPhotoBox" class="muted">Đang tải ảnh…</div></div>`:''}
-      <div class="panel"><div class="row" style="align-items:center"><h2 style="flex:1;margin:0">Phiếu của tôi</h2>
+      <div class="panel"><div class="row" style="align-items:center"><h2 style="flex:1;margin:0">Phiếu đã lưu</h2>
         <button id="nSubmit" class="sm" style="flex:0">Submit ngày</button></div>
+        <div class="fnote" style="margin-top:2px">Bấm vào một phiếu để xem chi tiết và ảnh. Submit ngày để duyệt cả lô vào tồn kho.</div>
         <div id="nList" style="margin-top:12px"></div></div>`;
 
       const recalc=()=>{ const amt=num(val('nLit'))*num(val('nPrice')); document.getElementById('nAmount').value = amt>0?fmtNum(Math.round(amt*100)/100):''; };
@@ -1101,54 +1190,57 @@
       document.getElementById('nLit').oninput=recalc;
       document.getElementById('nPrice').oninput=recalc;
       recalc();
-      document.getElementById('nSave').onclick=function(){ withBusy(this, e?'Đang lưu…':'Đang thêm…', ()=>saveNhap(e, el)); };
+      document.getElementById('nSave').onclick=function(){ withBusy(this, e?'Đang lưu…':'Đang lưu phiếu…', ()=>saveNhap(e, el)); };
       document.getElementById('nSubmit').onclick=function(){ withBusy(this,'Đang submit…',()=>submitNhapDay(el)); };
-      const c=document.getElementById('nCancel'); if(c) c.onclick=()=>{ state.nhapEdit=null; renderNhapUI(el); };
+      const c=document.getElementById('nCancel'); if(c) c.onclick=()=>{ state.nhapEdit=null; state.nhapStage={}; renderNhapUI(el); };
       renderNhapList();
-      if(e) renderReceiptSection(e.id, monthOf(e.entryDate));
+      renderNhapPhotoBox(e);
     }
 
     const NHAP_KIND_LABEL={ bien_ban_giao_nhan:'Ảnh biên bản giao nhận', phieu_nhap_kho:'Ảnh phiếu nhập kho' };
-    async function renderReceiptSection(ledgerId, ym){
+    const NHAP_SLOTS=['bien_ban_giao_nhan','phieu_nhap_kho'];
+    async function renderNhapPhotoBox(e){
       const box=document.getElementById('nPhotoBox'); if(!box) return;
-      let photos=[];
-      try{ photos=(await call('rpc_nhap_photo_list',{p_ledger_id:ledgerId})).rows||[]; }
-      catch(err){ box.innerHTML=`<span class="msg">${esc(err.message)}</span>`; return; }
-      const slots=['bien_ban_giao_nhan','phieu_nhap_kho'];
+      let uploaded=[];
+      if(e){ try{ uploaded=(await call('rpc_nhap_photo_list',{p_ledger_id:e.id})).rows||[]; }catch(_){} }
       const parts=[];
-      for(const kind of slots){
-        const p=photos.find(x=>x.kind===kind) || photos.find(x=>x.kind==='receipt' && kind==='bien_ban_giao_nhan');
-        if(p){
-          const url=await signedUrl(p.path);
+      for(const kind of NHAP_SLOTS){
+        const staged=state.nhapStage[kind];
+        const up=uploaded.find(x=>x.kind===kind) || (kind==='bien_ban_giao_nhan' && uploaded.find(x=>x.kind==='receipt'));
+        if(staged){
+          const url=URL.createObjectURL(staged);
+          parts.push(`<div style="flex:1;min-width:160px"><label>${NHAP_KIND_LABEL[kind]}</label>
+            <img class="thumb" src="${url}"><div style="margin-top:6px"><button class="ghost sm" data-unstage="${kind}">Bỏ ảnh</button></div></div>`);
+        }else if(up){
+          const url=await signedUrl(up.path);
           parts.push(`<div style="flex:1;min-width:160px"><label>${NHAP_KIND_LABEL[kind]}</label>
             ${url?`<a href="${esc(url)}" target="_blank"><img class="thumb" src="${esc(url)}"></a>`:'<div class="muted">Đã có ảnh.</div>'}
-            <div style="margin-top:6px"><button class="ghost sm" data-delreceipt="${p.id}">Xóa ảnh</button></div></div>`);
+            <div style="margin-top:6px"><button class="ghost sm" data-delreceipt="${up.id}">Xóa ảnh</button></div></div>`);
         }else{
           parts.push(`<div style="flex:1;min-width:160px"><label>${NHAP_KIND_LABEL[kind]} <span class="rq">*</span></label>
-            <input type="file" accept="image/*" capture="environment" data-kind="${kind}"></div>`);
+            <input type="file" accept="image/*" capture="environment" data-stage="${kind}"></div>`);
         }
       }
       box.innerHTML=`<div class="row">${parts.join('')}</div><div id="nPhotoMsg" class="msg"></div>`;
-      box.querySelectorAll('input[type=file]').forEach(inp=> inp.onchange=()=>uploadReceipt(ledgerId, ym, inp.dataset.kind, inp.files[0]));
-      box.querySelectorAll('[data-delreceipt]').forEach(b=> b.onclick=()=>deleteReceipt(ledgerId, ym, b.dataset.delreceipt));
+      box.querySelectorAll('input[type=file]').forEach(inp=> inp.onchange=()=>{ if(inp.files[0]){ state.nhapStage[inp.dataset.stage]=inp.files[0]; renderNhapPhotoBox(e); } });
+      box.querySelectorAll('[data-unstage]').forEach(b=> b.onclick=()=>{ delete state.nhapStage[b.dataset.unstage]; renderNhapPhotoBox(e); });
+      box.querySelectorAll('[data-delreceipt]').forEach(b=> b.onclick=()=>deleteNhapPhoto(e, b.dataset.delreceipt));
     }
-    async function uploadReceipt(ledgerId, ym, kind, file){
-      if(!file) return;
-      const msg=document.getElementById('nPhotoMsg'); if(msg){ msg.style.color='var(--muted)'; msg.textContent='Đang tải ảnh…'; }
-      try{
+    async function uploadStagedNhapPhotos(ledgerId, ym){
+      for(const kind of NHAP_SLOTS){
+        const file=state.nhapStage[kind]; if(!file) continue;
         const path=photoPath(ym, ledgerId, kind, file);
         const {error}=await sb.storage.from('chung-tu').upload(path, file, {contentType:file.type||'image/jpeg', upsert:false});
         if(error) throw error;
         await call('rpc_nhap_photo_add',{p_ledger_id:ledgerId, p_kind:kind, p_path:path});
-        toast('Đã thêm ảnh.'); renderReceiptSection(ledgerId, ym);
-      }catch(err){ if(msg){ msg.style.color='var(--danger)'; msg.textContent=err.message||'Tải ảnh thất bại.'; } }
+      }
     }
-    async function deleteReceipt(ledgerId, ym, photoId){
+    async function deleteNhapPhoto(e, photoId){
       if(!confirm('Xóa ảnh này?')) return;
       try{
         const r=await call('rpc_nhap_photo_delete',{p_id:photoId});
         if(r&&r.path){ try{ await sb.storage.from('chung-tu').remove([r.path]); }catch(_){} }
-        toast('Đã xóa ảnh.'); renderReceiptSection(ledgerId, ym);
+        toast('Đã xóa ảnh.'); renderNhapPhotoBox(e);
       }catch(err){ toast(err.message); }
     }
 
@@ -1163,10 +1255,14 @@
       const msg=document.getElementById('nMsg'); msg.textContent='';
       try{
         const res=await call(e?'rpc_nhap_update':'rpc_nhap_create', nhapParams(e));
-        toast(e?'Đã lưu phiếu.':'Đã thêm phiếu. Bổ sung ảnh phiếu nhập.');
-        state.nhapEdit=(e&&e.id)||(res&&res.id)||null;  // ở lại chế độ sửa để đính ảnh
-        await loadNhapMine(); renderNhapUI(el);
-        if(state.nhapEdit) window.scrollTo(0,0);
+        const id=(e&&e.id)||(res&&res.id);
+        const ym=monthOf(val('nDate')||(e&&e.entryDate));
+        if(id){ try{ await uploadStagedNhapPhotos(id, ym); }
+          catch(upErr){ state.nhapEdit=id; state.nhapStage={}; await loadNhapMine(); renderNhapUI(el);
+            document.getElementById('nMsg').textContent='Đã lưu phiếu nhưng tải ảnh lỗi: '+(upErr.message||upErr); window.scrollTo(0,0); return; } }
+        toast(e?'Đã lưu phiếu.':'Đã lưu phiếu kèm ảnh.');
+        state.nhapEdit=null; state.nhapStage={};   // quay về form mới cho phiếu kế tiếp
+        await loadNhapMine(); renderNhapUI(el); window.scrollTo(0,0);
       }catch(err){ msg.textContent=err.message; }
     }
     async function submitNhapDay(el){
@@ -1177,22 +1273,41 @@
     }
     function renderNhapList(){
       const box=document.getElementById('nList'); const rows=state.nhapMine||[];
-      if(!rows.length){ box.innerHTML='<span class="muted">Chưa có phiếu.</span>'; return; }
+      if(!rows.length){ box.innerHTML='<span class="muted">Chưa có phiếu. Điền form phía trên rồi bấm Lưu phiếu.</span>'; return; }
       box.innerHTML=`<table><thead><tr><th>Số phiếu</th><th>NCC</th><th>Téc</th><th>Loại dầu</th>
         <th>Lít</th><th>Đơn giá</th><th>Thành tiền</th><th>Trạng thái</th><th></th></tr></thead><tbody>
         ${rows.map(r=>`<tr>
-          <td>${r.code?esc(r.code):'<span class="muted">(nháp)</span>'}${r.rejectReason?`<div class="msg" style="min-height:0">Trả về: ${esc(r.rejectReason)}</div>`:''}${r.supplierInvoiceNo?`<div class="muted" style="font-size:12px">HĐ: ${esc(r.supplierInvoiceNo)}</div>`:''}</td>
+          <td><a href="#" data-ndetail="${r.id}" style="color:var(--brand,#0E5AA7);font-weight:600">${r.code?esc(r.code):'(nháp)'}</a>${r.rejectReason?`<div class="msg" style="min-height:0">Trả về: ${esc(r.rejectReason)}</div>`:''}${r.supplierInvoiceNo?`<div class="muted" style="font-size:12px">HĐ: ${esc(r.supplierInvoiceNo)}</div>`:''}</td>
           <td>${esc(r.supplierName||'')}</td><td>${esc(r.tankName||'')}</td><td>${esc(r.oilTypeName||'')}</td>
           <td>${fmtNum(r.liters)}</td><td>${fmtNum(r.unitPrice)}</td><td>${fmtNum(r.amount)}</td>
           <td><span class="badge">${STATUS_LABEL[r.status]||esc(r.status)}</span></td>
-          <td style="white-space:nowrap">${r.status==='Nhap'
-            ? `<button class="ghost sm" data-nedit="${r.id}">Sửa</button><button class="ghost sm" data-ndel="${r.id}">Xóa</button>`
-            : `<button class="ghost sm" data-nwithdraw="${r.id}">Rút lại</button>`}</td>
+          <td style="white-space:nowrap">
+            <button class="ghost sm" data-ndetail="${r.id}">Chi tiết</button>
+            ${r.status==='Nhap' ? `<button class="ghost sm" data-nedit="${r.id}">Sửa</button><button class="ghost sm" data-ndel="${r.id}">Xóa</button>`:''}</td>
         </tr>`).join('')}</tbody></table>`;
       const el=document.getElementById('screen');
-      box.querySelectorAll('[data-nedit]').forEach(b=> b.onclick=()=>{ state.nhapEdit=b.dataset.nedit; renderNhapUI(el); window.scrollTo(0,0); });
+      box.querySelectorAll('[data-nedit]').forEach(b=> b.onclick=()=>{ state.nhapEdit=b.dataset.nedit; state.nhapStage={}; renderNhapUI(el); window.scrollTo(0,0); });
       box.querySelectorAll('[data-ndel]').forEach(b=> b.onclick=()=>delNhap(b.dataset.ndel, el));
-      box.querySelectorAll('[data-nwithdraw]').forEach(b=> b.onclick=()=>withdrawNhap(b.dataset.nwithdraw, el));
+      box.querySelectorAll('[data-ndetail]').forEach(b=> b.onclick=(ev)=>{ ev.preventDefault(); nhapDetail((state.nhapMine||[]).find(x=>x.id===b.dataset.ndetail)); });
+    }
+    async function nhapDetail(r){
+      if(!r) return;
+      const rowsHtml=[
+        ['Số phiếu', r.code||'(nháp)'], ['Ngày', r.entryDate||''], ['Nhà cung cấp', r.supplierName||''],
+        ['Téc nhận', r.tankName||''], ['Loại dầu', r.oilTypeName||''], ['Số lít', fmtNum(r.liters)],
+        ['Đơn giá', r.unitPrice!=null?fmtNum(r.unitPrice):''], ['Thành tiền', r.amount!=null?fmtNum(r.amount):''],
+        ['Số HĐ NCC', r.supplierInvoiceNo||''], ['Trạng thái', STATUS_LABEL[r.status]||r.status], ['Ghi chú', r.note||'']
+      ].map(([k,v])=>`<tr><td class="muted" style="padding:2px 12px 2px 0;white-space:nowrap">${esc(k)}</td><td>${esc(v)}</td></tr>`).join('');
+      showModal('Phiếu '+(r.code||'(nháp)'), `<table class="line-table">${rowsHtml}</table><div id="ndPhotos" class="muted" style="margin-top:10px">Đang tải ảnh…</div>`);
+      let photos=[];
+      try{ photos=(await call('rpc_nhap_photo_list',{p_ledger_id:r.id})).rows||[]; }catch(_){}
+      const pbox=document.getElementById('ndPhotos'); if(!pbox) return;
+      if(!photos.length){ pbox.innerHTML='<span class="muted">Chưa có ảnh.</span>'; return; }
+      const parts=[];
+      for(const p of photos){ const url=await signedUrl(p.path);
+        parts.push(`<div style="flex:1;min-width:200px"><label>${NHAP_KIND_LABEL[p.kind]||esc(p.kind)}</label>
+          ${url?`<a href="${esc(url)}" target="_blank"><img class="thumb" style="max-height:none" src="${esc(url)}"></a>`:'<span class="muted">Không tải được ảnh.</span>'}</div>`); }
+      pbox.innerHTML=`<div class="row">${parts.join('')}</div>`;
     }
     async function delNhap(id, el){
       if(!confirm('Xóa phiếu nháp này?')) return;
@@ -1333,20 +1448,22 @@
       el.innerHTML=`<div class="panel">${loadingText()}</div>`;
       try{
         await ensureActive();
-        if(!state.adminFilter) state.adminFilter={ days:'60', type:'', q:'' };
+        if(!state.adminFilter) state.adminFilter={ days:'60', type:'', q:'', flaggedOnly:false };
         await loadAdminLedger();
         renderAdminLedgerUI(el);
       }catch(err){ el.innerHTML=`<div class="panel"><span class="msg">${esc(err.message)}</span></div>`; }
     }
     async function loadAdminLedger(){
       const f=state.adminFilter;
-      state.adminRows=(await call('rpc_admin_ledger_list',{ p_days:Number(f.days)||60, p_entry_type:f.type||null, p_q:f.q||null })).rows||[];
+      state.adminRows=(await call('rpc_admin_ledger_list',{ p_days:Number(f.days)||60, p_entry_type:f.type||null, p_q:f.q||null, p_flagged_only:!!f.flaggedOnly })).rows||[];
     }
     function adminStatusBadge(r){
-      if(r.legacy) return '<span class="badge" style="background:#64707E;color:#fff">Lịch sử</span>';
+      const flag = (r.flagged && (r.flagStatus||'open')==='open')
+        ? ' <span class="badge" style="background:#B26B00;color:#fff">Chờ sửa</span>' : '';
+      if(r.legacy) return '<span class="badge" style="background:#64707E;color:#fff">Lịch sử</span>'+flag;
       const m={ Nhap:['Nháp','#B26B00'], ChoDoiChieu:['Chờ đối chiếu','#0E5AA7'], DaDuyet:['Đã duyệt','#1E8E5A'] };
       const s=m[r.status]||[r.status,'#64707E'];
-      return `<span class="badge" style="background:${s[1]};color:#fff">${esc(s[0])}</span>`;
+      return `<span class="badge" style="background:${s[1]};color:#fff">${esc(s[0])}</span>`+flag;
     }
     function renderAdminLedgerUI(el){
       const f=state.adminFilter, rows=state.adminRows||[];
@@ -1354,7 +1471,8 @@
           <th>Ngày</th><th>Số phiếu</th><th>Loại</th><th>Xe/NCC</th><th>Téc</th><th>Loại dầu</th><th>Số lít</th>
           <th>Trạng thái</th><th>Sửa lần cuối</th><th></th></tr></thead><tbody>
         ${rows.map(r=>`<tr>
-          <td>${esc(r.entryDate||'')}</td><td>${esc(r.code||'(nháp)')}</td>
+          <td>${esc(r.entryDate||'')}</td>
+          <td>${esc(r.code||'(nháp)')}${(r.flagged&&(r.flagStatus||'open')==='open')?`<div class="msg" style="min-height:0;color:#B26B00">Yêu cầu sửa: ${esc(r.flagReason||'')}${r.flaggedByName?(' — '+esc(r.flaggedByName)):''}</div>`:''}</td>
           <td>${r.entryType==='nhap'?'Nhập':'Bơm'}</td>
           <td>${esc(r.entryType==='nhap'?(r.supplierName||''):(r.vehiclePlate||r.supplierName||''))}</td>
           <td>${esc(r.tankName||'')}</td><td>${esc(r.oilTypeName||'')}</td><td>${fmtNum(r.liters)}</td>
@@ -1362,11 +1480,12 @@
           <td>${r.editedAt?esc(r.editedAt)+(r.editedByName?(' · '+esc(r.editedByName)):''):'<span class="muted">—</span>'}</td>
           <td style="white-space:nowrap">
             <button class="ghost sm" data-aedit="${r.id}">Sửa</button>
+            ${(r.flagged&&(r.flagStatus||'open')==='open')?`<button class="ghost sm" data-aresolve="${r.id}">Bỏ cờ</button>`:''}
             <button class="ghost sm" data-ahist="${r.id}">Lịch sử</button>
             <button class="ghost sm" data-adel="${r.id}" style="color:var(--danger)">Xóa</button></td>
         </tr>`).join('')}</tbody></table>` : '<span class="muted">Không có phiếu nào trong khoảng đã chọn.</span>';
       el.innerHTML=`<div class="panel"><h2>Sửa phiếu (Admin)</h2>
-        <p class="muted" style="margin-top:-6px">Sửa/xóa thẳng từng phiếu lịch sử. Mọi thay đổi được ghi lịch sử (audit) kèm thời điểm và cập nhật trực tiếp vào cơ sở dữ liệu.</p>
+        <p class="muted" style="margin-top:-6px">Sửa/xóa thẳng từng phiếu lịch sử, hoặc xử lý các phiếu bị Trưởng bộ phận/Kế toán gắn cờ. Mọi thay đổi được ghi lịch sử (audit) kèm thời điểm.</p>
         <div class="row">
           <div><label>Khoảng ngày</label><select id="alDays">
             <option value="30">30 ngày</option><option value="60">60 ngày</option><option value="90">90 ngày</option></select></div>
@@ -1374,17 +1493,25 @@
             <option value="">Tất cả</option><option value="bom">Bơm</option><option value="nhap">Nhập</option></select></div>
           <div style="flex:2"><label>Tìm (số phiếu, biển số, NCC, ghi chú)</label><input id="alQ" value="${esc(f.q||'')}"></div>
         </div>
+        <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-weight:normal">
+          <input type="checkbox" id="alFlag" style="width:auto" ${f.flaggedOnly?'checked':''}> Chỉ phiếu chờ sửa (bị gắn cờ)</label>
         <div style="margin-top:10px"><button id="alApply" style="flex:0">Lọc</button></div>
         <div style="margin-top:12px">${table}</div></div>`;
       document.getElementById('alDays').value=String(f.days);
       document.getElementById('alType').value=f.type||'';
       document.getElementById('alApply').onclick=function(){ withBusy(this,'Đang lọc…',async()=>{
-        state.adminFilter={ days:val('alDays'), type:val('alType'), q:val('alQ') };
+        state.adminFilter={ days:val('alDays'), type:val('alType'), q:val('alQ'), flaggedOnly:document.getElementById('alFlag').checked };
         await loadAdminLedger(); renderAdminLedgerUI(el);
       }); };
       el.querySelectorAll('[data-aedit]').forEach(b=> b.onclick=()=>adminEditPhieu(b.dataset.aedit, el));
+      el.querySelectorAll('[data-aresolve]').forEach(b=> b.onclick=()=>adminResolveFlag(b.dataset.aresolve, el));
       el.querySelectorAll('[data-ahist]').forEach(b=> b.onclick=()=>adminAuditPhieu(b.dataset.ahist));
       el.querySelectorAll('[data-adel]').forEach(b=> b.onclick=()=>adminDeletePhieu(b.dataset.adel, el));
+    }
+    async function adminResolveFlag(id, el){
+      try{ await call('rpc_admin_flag_resolve',{p_id:id}); toast('Đã bỏ cờ yêu cầu sửa.');
+        await loadAdminLedger(); renderAdminLedgerUI(el);
+      }catch(err){ toast(err.message); }
     }
     function adminEditPhieu(id, el){
       const r=(state.adminRows||[]).find(x=>x.id===id); if(!r) return;
@@ -1423,7 +1550,9 @@
             p_supplier_id:val('aeSup')||null });
         }
         withBusy(btn,'Đang lưu…', async()=>{
-          try{ await call('rpc_admin_ledger_update', params); closeModal(); toast('Đã cập nhật phiếu.');
+          try{ await call('rpc_admin_ledger_update', params);
+            if(r.flagged&&(r.flagStatus||'open')==='open'){ try{ await call('rpc_admin_flag_resolve',{p_id:id}); }catch(_){} }
+            closeModal(); toast('Đã cập nhật phiếu.');
             await loadAdminLedger(); renderAdminLedgerUI(el);
           }catch(err){ modalErr(err.message); }
         });
