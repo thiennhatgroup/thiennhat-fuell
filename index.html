@@ -1387,9 +1387,9 @@
         <span style="min-width:48px;text-align:right">${fmtNum(r.pctFull)}%</span></div>`;
     }
     function renderInventoryUI(el){
-      const rows=state.stock||[], canSet=can('adjust:manage');
+      const rows=state.stock||[];
       const table = rows.length
-        ? `<table><thead><tr><th>Téc</th><th>Loại dầu</th><th>Tồn đầu</th><th>Nhập</th><th>Xuất</th>
+        ? `<div style="overflow-x:auto"><table><thead><tr><th>Téc</th><th>Loại dầu</th><th>Tồn đầu</th><th>Nhập</th><th>Xuất</th>
             <th>Tồn cuối</th><th>Sức chứa</th><th style="min-width:140px">% đầy</th>
             <th>TH BQ/ngày (tuần)</th><th>TH BQ/ngày (tháng)</th><th>Ngày tồn còn lại</th>
             <th>Chờ NCC (ngày)</th><th>Tồn tối thiểu</th><th></th></tr></thead><tbody>
@@ -1402,45 +1402,13 @@
               <td>${r.daysLeft!=null?fmtNum(r.daysLeft):'<span class="muted">—</span>'}</td>
               <td>${fmtNum(r.leadTimeDays)}</td><td>${fmtNum(r.minStock)}</td>
               <td>${invFlag(r)}</td>
-            </tr>`).join('')}</tbody></table>`
+            </tr>`).join('')}</tbody></table></div>`
         : '<span class="muted">Chưa có téc nào (thêm ở Danh mục & Xe).</span>';
       el.innerHTML=`<div class="panel"><div class="row" style="align-items:center">
           <h2 style="flex:1;margin:0">Tồn kho thời gian thực</h2>
           <button class="ghost sm" id="invReload" style="flex:0">Tải lại</button></div>
-        <p class="muted" style="margin-top:4px">Tồn cuối = Tồn đầu + Nhập − Xuất (chỉ phiếu đã duyệt). Bơm ngoài không trừ tồn téc.
-          TH BQ/ngày = tiêu hao trung bình (xuất) 7 & 30 ngày gần nhất. Ngày tồn còn lại = Tồn cuối ÷ TH BQ tháng.
-          Chờ NCC = lead-time đặt ở Danh mục. Tồn tối thiểu = TH BQ tháng × Chờ NCC.</p>
-        <div style="margin-top:8px">${table}</div></div>
-        ${canSet?`<div class="panel"><h2>Đặt tồn đầu gốc</h2>
-          <p class="muted" style="margin-top:-6px">Chỉ Kế toán. Đặt một lần theo giá trị đo tay tại mốc khởi tạo.</p>
-          <div class="row">
-            <div><label>Téc <span class="rq">*</span></label><select id="opTank" class="req"><option value="">— chọn téc —</option>
-              ${rows.map(r=>`<option value="${r.tankId}">${esc(r.tankName)}</option>`).join('')}</select>
-              <div class="fnote">Chọn téc cần đặt tồn đầu. Chọn xong sẽ hiện giá trị hiện tại (nếu có).</div></div>
-            <div><label>Tồn đầu (lít) <span class="rq">*</span></label><input id="opLit" class="req" inputmode="decimal">
-              <div class="fnote">Số lít đo tay tại mốc khởi tạo. Không được âm.</div></div>
-            <div><label>Mốc (ngày) <span class="rq">*</span></label><input id="opDate" class="req" type="date">
-              <div class="fnote">Ngày ứng với số tồn đầu đo tay ở trên.</div></div>
-          </div>
-          <div style="margin-top:12px"><button id="opSave" style="flex:0">Lưu tồn đầu</button></div>
-          <div id="opMsg" class="msg"></div></div>`:''}`;
+        <div style="margin-top:8px">${table}</div></div>`;
       document.getElementById('invReload').onclick=()=>renderInventory(el);
-      if(canSet){
-        const tsel=document.getElementById('opTank');
-        tsel.onchange=()=>{ const r=rows.find(x=>x.tankId===tsel.value);
-          document.getElementById('opLit').value = r&&r.opening!=null?r.opening:'';
-          document.getElementById('opDate').value = r&&r.openingAsOf?r.openingAsOf:''; };
-        document.getElementById('opSave').onclick=()=>saveOpening(el);
-      }
-    }
-    async function saveOpening(el){
-      const msg=document.getElementById('opMsg'); msg.textContent='';
-      const tank=val('opTank'); if(!tank){ msg.textContent='Chọn téc.'; return; }
-      try{
-        await call('rpc_tank_opening_set',{ p_tank_id:tank, p_liters:num(val('opLit')),
-          p_as_of_date:val('opDate')||null, p_note:null });
-        toast('Đã lưu tồn đầu.'); renderInventory(el);
-      }catch(err){ msg.textContent=err.message; }
     }
 
     // ---- Màn Sửa phiếu (Admin): dashboard tất cả phiếu + sửa/xóa/lịch sử ----
@@ -1578,37 +1546,142 @@
     const PERIOD_KIND={ tinh_tec:'Tịnh téc', kiem_ke:'Kiểm kê' };
     async function renderAdjust(el){
       el.innerHTML=`<div class="panel">${loadingText()}</div>`;
-      try{ await ensureActive(); state.periods=(await call('rpc_stock_period_list')).rows||[]; renderAdjustUI(el); }
+      try{
+        await ensureActive();
+        const [periods, stock] = await Promise.all([ call('rpc_stock_period_list'), call('rpc_inventory_stock') ]);
+        state.periods=periods.rows||[]; state.stock=stock.rows||[];
+        renderAdjustUI(el);
+      }
       catch(err){ el.innerHTML=`<div class="panel"><span class="msg">${esc(err.message)}</span></div>`; }
     }
     function renderAdjustUI(el){
-      const a=state.active, tanks=a.tanks||[], rows=state.periods||[];
+      const a=state.active, tanks=a.tanks||[];
       const opt=arr=>arr.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('');
       const today=new Date().toISOString().slice(0,10);
-      el.innerHTML=`<div class="panel"><h2>Kỳ điều chỉnh tồn mới</h2>
-        <p class="muted" style="margin-top:-6px">Tịnh téc (khi téc cạn) hoặc Kiểm kê (giữa chừng). Chốt kỳ để sinh tịnh âm/dương và phân bổ cho xe.</p>
+      state.kkBienBan=null;
+      el.innerHTML=`
+      <div class="panel"><h2>Đặt tồn dầu gốc</h2>
+        <p class="muted" style="margin-top:-6px">Đặt một lần theo giá trị đo tay tại mốc khởi tạo. Tồn cuối được tính từ mốc này cộng nhập trừ xuất.</p>
         <div class="row">
-          <div><label>Téc</label><select id="spTank"><option value="">— chọn téc —</option>${opt(tanks)}</select></div>
-          <div><label>Loại kỳ</label><select id="spKind">
-            <option value="tinh_tec">Tịnh téc (téc cạn)</option>
-            <option value="kiem_ke">Kiểm kê (giữa chừng)</option></select></div>
+          <div><label>Téc <span class="rq">*</span></label><select id="opTank"><option value="">— chọn téc —</option>${opt(tanks)}</select>
+            <div class="fnote">Chọn xong sẽ hiện giá trị hiện tại (nếu có).</div></div>
+          <div><label>Tồn gốc (lít) <span class="rq">*</span></label><input id="opLit" inputmode="decimal">
+            <div class="fnote">Số lít đo tay tại mốc khởi tạo. Không được âm.</div></div>
+          <div><label>Mốc (ngày) <span class="rq">*</span></label><input id="opDate" type="date">
+            <div class="fnote">Ngày ứng với số tồn gốc ở trên.</div></div>
         </div>
-        <div class="row">
-          <div><label>Ngày bắt đầu</label><input id="spStart" type="date" value="${today}"></div>
-          <div><label>Ghi chú</label><input id="spNote"></div>
-        </div>
-        <div style="margin-top:12px"><button id="spCreate" style="flex:0">Tạo kỳ</button></div>
-        <div id="spMsg" class="msg"></div>
+        <div style="margin-top:12px"><button id="opSave" style="flex:0">Lưu tồn gốc</button></div>
+        <div id="opMsg" class="msg"></div>
       </div>
-      <div class="panel"><h2>Các kỳ</h2><div id="spList" style="margin-top:8px"></div></div>`;
-      document.getElementById('spCreate').onclick=()=>createPeriod(el);
+
+      <div class="panel"><h2>Tịnh téc</h2>
+        <p class="muted" style="margin-top:-6px">Dùng khi téc cạn. Ghi tồn thực tế đo tay trong khoảng từ ngày bắt đầu đến ngày chốt để sinh tịnh âm/dương và phân bổ cho xe.</p>
+        <div class="row">
+          <div><label>Téc <span class="rq">*</span></label><select id="ttTank"><option value="">— chọn téc —</option>${opt(tanks)}</select></div>
+          <div><label>Tồn thực tế (lít) <span class="rq">*</span></label><input id="ttActual" inputmode="decimal">
+            <div class="fnote">Khối lượng đo tay tại ngày chốt.</div></div>
+        </div>
+        <div class="row">
+          <div><label>Ngày bắt đầu <span class="rq">*</span></label><input id="ttStart" type="date" value="${today}"></div>
+          <div><label>Ngày chốt <span class="rq">*</span></label><input id="ttClose" type="date" value="${today}"></div>
+        </div>
+        <div class="row">
+          <div><label>Ghi chú</label><input id="ttNote"></div>
+        </div>
+        <div style="margin-top:12px"><button id="ttSave" style="flex:0">Ghi tịnh téc</button></div>
+        <div id="ttMsg" class="msg"></div>
+      </div>
+
+      <div class="panel"><h2>Kiểm kê</h2>
+        <p class="muted" style="margin-top:-6px">Kiểm kê giữa chừng. Lưu lại người kiểm kê, thời điểm và biên bản xác nhận.</p>
+        <div class="row">
+          <div><label>Téc <span class="rq">*</span></label><select id="kkTank"><option value="">— chọn téc —</option>${opt(tanks)}</select></div>
+          <div><label>Tồn thực tế (lít) <span class="rq">*</span></label><input id="kkActual" inputmode="decimal">
+            <div class="fnote">Khối lượng đo tay tại thời điểm kiểm kê.</div></div>
+        </div>
+        <div class="row">
+          <div><label>Ngày kiểm kê <span class="rq">*</span></label><input id="kkDate" type="date" value="${today}"></div>
+          <div><label>Người kiểm kê</label><input id="kkBy" value="${esc(state.user.name)}" disabled>
+            <div class="fnote">Ghi theo tài khoản đăng nhập kèm dấu thời gian khi lưu.</div></div>
+        </div>
+        <div class="row">
+          <div><label>Ghi chú</label><input id="kkNote"></div>
+        </div>
+        <div class="row" style="margin-top:4px">
+          <div style="flex:1;min-width:200px"><label>Biên bản xác nhận <span class="rq">*</span></label>
+            <div id="kkBienBox"></div></div>
+        </div>
+        <div style="margin-top:12px"><button id="kkSave" style="flex:0">Ghi kiểm kê</button></div>
+        <div id="kkMsg" class="msg"></div>
+      </div>
+
+      <div class="panel"><h2>Lịch sử tịnh / kiểm kê</h2><div id="spList" style="margin-top:8px"></div></div>`;
+
+      const tsel=document.getElementById('opTank');
+      tsel.onchange=()=>{ const r=(state.stock||[]).find(x=>x.tankId===tsel.value);
+        document.getElementById('opLit').value = r&&r.opening!=null?r.opening:'';
+        document.getElementById('opDate').value = r&&r.openingAsOf?r.openingAsOf:today; };
+      document.getElementById('opSave').onclick=()=>saveOpening(el);
+      document.getElementById('ttSave').onclick=()=>recordPeriod(el,'tinh_tec');
+      document.getElementById('kkSave').onclick=()=>recordPeriod(el,'kiem_ke');
+      renderBienBanBox();
       renderPeriodList(el);
+    }
+    async function saveOpening(el){
+      const msg=document.getElementById('opMsg'); msg.textContent='';
+      const tank=val('opTank'); if(!tank){ msg.textContent='Chọn téc.'; return; }
+      try{
+        await call('rpc_tank_opening_set',{ p_tank_id:tank, p_liters:num(val('opLit')),
+          p_as_of_date:val('opDate')||null, p_note:null });
+        toast('Đã lưu tồn gốc.'); renderAdjust(el);
+      }catch(err){ msg.textContent=err.message; }
+    }
+    // Ô chọn ảnh biên bản kiểm kê (chờ upload lúc lưu).
+    function renderBienBanBox(){
+      const box=document.getElementById('kkBienBox'); if(!box) return;
+      const f=state.kkBienBan;
+      box.innerHTML = f
+        ? `<img class="thumb" src="${URL.createObjectURL(f)}"><div style="margin-top:6px"><button class="ghost sm" id="kkBienClear">Bỏ ảnh</button></div>`
+        : `<input type="file" accept="image/*" capture="environment" id="kkBienFile">`;
+      const inp=document.getElementById('kkBienFile');
+      if(inp) inp.onchange=()=>{ if(inp.files[0]){ state.kkBienBan=inp.files[0]; renderBienBanBox(); } };
+      const clr=document.getElementById('kkBienClear');
+      if(clr) clr.onclick=()=>{ state.kkBienBan=null; renderBienBanBox(); };
+    }
+    // Ghi thẳng một kỳ tịnh téc / kiểm kê (tạo + chốt trong một bước).
+    async function recordPeriod(el, kind){
+      const P = kind==='tinh_tec'
+        ? { msg:'ttMsg', tank:'ttTank', actual:'ttActual', start:'ttStart', close:'ttClose', note:'ttNote' }
+        : { msg:'kkMsg', tank:'kkTank', actual:'kkActual', start:'kkDate',  close:'kkDate',  note:'kkNote' };
+      const msg=document.getElementById(P.msg); msg.textContent='';
+      const tank=val(P.tank);
+      if(!tank){ msg.textContent='Chọn téc.'; return; }
+      if(!val(P.actual)){ msg.textContent='Nhập tồn thực tế (lít).'; return; }
+      const start=val(P.start), close=val(P.close);
+      if(!start){ msg.textContent='Chọn ngày bắt đầu.'; return; }
+      if(kind==='tinh_tec' && (!close || close<start)){ msg.textContent='Ngày chốt phải ≥ ngày bắt đầu.'; return; }
+      if(kind==='kiem_ke' && !state.kkBienBan){ msg.textContent='Đính kèm biên bản xác nhận kiểm kê.'; return; }
+      try{
+        let bienBanPath=null;
+        if(kind==='kiem_ke' && state.kkBienBan){
+          const f=state.kkBienBan;
+          const ext=((f.name||'').split('.').pop()||'jpg').toLowerCase().replace(/[^a-z0-9]/g,'')||'jpg';
+          bienBanPath=`${monthOf(close)}/kiem-ke/${tank}-${Date.now()}.${ext}`;
+          const {error}=await sb.storage.from('chung-tu').upload(bienBanPath, f, {contentType:f.type||'image/jpeg', upsert:false});
+          if(error) throw error;
+        }
+        const r=await call('rpc_stock_period_record',{ p_tank_id:tank, p_kind:kind,
+          p_start_date:start, p_close_date:close, p_actual_liters:num(val(P.actual)),
+          p_note:val(P.note)||null, p_bien_ban_path:bienBanPath });
+        toast(`Đã ghi. Tịnh âm ${fmtNum(r.tinhAm)}, tịnh dương ${fmtNum(r.tinhDuong)}.`);
+        renderAdjust(el);
+      }catch(err){ msg.textContent=err.message; }
     }
     function renderPeriodList(el){
       const box=document.getElementById('spList'); const rows=state.periods||[];
       if(!rows.length){ box.innerHTML='<span class="muted">Chưa có kỳ nào.</span>'; return; }
-      box.innerHTML=`<table><thead><tr><th>Số kỳ</th><th>Téc</th><th>Loại</th><th>Bắt đầu</th><th>Chốt</th>
-        <th>Thực tế</th><th>Tồn sổ</th><th>Tịnh âm</th><th>Tịnh dương</th><th>Trạng thái</th><th></th></tr></thead><tbody>
+      box.innerHTML=`<div style="overflow-x:auto"><table><thead><tr><th>Số kỳ</th><th>Téc</th><th>Loại</th><th>Bắt đầu</th><th>Chốt</th>
+        <th>Thực tế</th><th>Tồn sổ</th><th>Tịnh âm</th><th>Tịnh dương</th><th>Người ghi</th><th>Thời điểm</th><th>Biên bản</th><th></th></tr></thead><tbody>
         ${rows.map(r=>`<tr>
           <td>${r.code?esc(r.code):'<span class="muted">(mở)</span>'}</td>
           <td>${esc(r.tankName||'')}</td><td>${esc(PERIOD_KIND[r.kind]||r.kind)}</td>
@@ -1616,37 +1689,22 @@
           <td>${fmtNum(r.actual)}</td><td>${fmtNum(r.book)}</td>
           <td${Number(r.tinhAm)>0?' style="color:var(--danger)"':''}>${fmtNum(r.tinhAm)}</td>
           <td${Number(r.tinhDuong)>0?' style="color:var(--ok)"':''}>${fmtNum(r.tinhDuong)}</td>
-          <td><span class="badge">${r.status==='DaChot'?'Đã chốt':'Đang mở'}</span></td>
+          <td>${esc(r.closedByName||'')}</td><td style="white-space:nowrap">${esc(r.closedAt||'')}</td>
+          <td>${r.bienBanPath?`<button class="ghost sm" data-pbien="${esc(r.bienBanPath)}">Xem</button>`:'<span class="muted">—</span>'}</td>
           <td style="white-space:nowrap">${r.status==='Mo'
-            ? `<button class="sm" data-close="${r.id}" style="flex:0">Chốt</button><button class="ghost sm" data-pdel="${r.id}">Xóa</button>`
+            ? `<button class="ghost sm" data-pdel="${r.id}">Xóa</button>`
             : `<button class="ghost sm" data-palloc="${r.id}">Phân bổ</button>`}</td>
-        </tr>`).join('')}</tbody></table>`;
-      box.querySelectorAll('[data-close]').forEach(b=> b.onclick=()=>closePeriod(b.dataset.close, el));
+        </tr>`).join('')}</tbody></table></div>`;
       box.querySelectorAll('[data-pdel]').forEach(b=> b.onclick=()=>deletePeriod(b.dataset.pdel, el));
       box.querySelectorAll('[data-palloc]').forEach(b=> b.onclick=()=>viewAlloc(b.dataset.palloc));
-    }
-    async function createPeriod(el){
-      const msg=document.getElementById('spMsg'); msg.textContent='';
-      if(!val('spTank')){ msg.textContent='Chọn téc.'; return; }
-      try{
-        await call('rpc_stock_period_create',{ p_tank_id:val('spTank'), p_kind:val('spKind'),
-          p_start_date:val('spStart')||null, p_note:val('spNote') });
-        toast('Đã tạo kỳ.'); state.periods=(await call('rpc_stock_period_list')).rows||[]; renderAdjustUI(el);
-      }catch(err){ msg.textContent=err.message; }
-    }
-    async function closePeriod(id, el){
-      const s=prompt('Nhập Tồn thực tế đo tay (lít) để chốt kỳ:',''); if(s===null) return;
-      const actual=num(s);
-      if(!confirm(`Chốt kỳ với tồn thực tế ${fmtNum(actual)} lít? Không thể sửa sau khi chốt.`)) return;
-      try{ const r=await call('rpc_stock_period_close',{ p_id:id, p_actual_liters:actual });
-        toast(`Đã chốt. Tịnh âm ${fmtNum(r.tinhAm)}, tịnh dương ${fmtNum(r.tinhDuong)}.`);
-        state.periods=(await call('rpc_stock_period_list')).rows||[]; renderAdjustUI(el);
-      }catch(err){ toast(err.message); }
+      box.querySelectorAll('[data-pbien]').forEach(b=> b.onclick=async()=>{
+        const url=await signedUrl(b.dataset.pbien);
+        if(url) window.open(url,'_blank'); else toast('Không mở được ảnh.');
+      });
     }
     async function deletePeriod(id, el){
       if(!confirm('Xóa kỳ đang mở này?')) return;
-      try{ await call('rpc_stock_period_delete',{p_id:id}); toast('Đã xóa.');
-        state.periods=(await call('rpc_stock_period_list')).rows||[]; renderAdjustUI(el);
+      try{ await call('rpc_stock_period_delete',{p_id:id}); toast('Đã xóa.'); renderAdjust(el);
       }catch(err){ toast(err.message); }
     }
     async function viewAlloc(id){
