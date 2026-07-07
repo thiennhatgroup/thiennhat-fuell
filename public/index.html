@@ -64,6 +64,16 @@
     input.req:focus,select.req:focus,textarea.req:focus{background:#fff;border-color:var(--accent)}
     /* Dòng hướng dẫn nhập dưới mỗi trường. */
     .fnote{font-size:12px;color:var(--muted);margin:4px 0 2px;line-height:1.35}
+    /* Bảng báo cáo nhiều cột (lưới theo ngày): giữ dạng bảng cuộn ngang trên mobile,
+       không tự xếp thành thẻ như quy tắc S11. */
+    @media(max-width:760px){
+      table.rpt-grid{display:table;width:auto}
+      table.rpt-grid thead{display:table-header-group}
+      table.rpt-grid tbody{display:table-row-group}
+      table.rpt-grid tr{display:table-row}
+      table.rpt-grid th,table.rpt-grid td{display:table-cell;white-space:nowrap}
+      table.rpt-grid td::before{display:none}
+    }
     .hidden{display:none!important}
     /* ---- Sub-tab nav (catalog) ---- */
     .nav{display:flex;gap:8px;overflow-x:auto;padding:10px 16px;background:#fff;border-bottom:1px solid var(--line);position:sticky;top:57px;z-index:10}
@@ -171,19 +181,19 @@
     }
     /* ---- Mobile: xếp bảng thành thẻ dọc ---- */
     @media(max-width:760px){
-      table:not(.line-table){display:block}
-      table:not(.line-table) thead{display:none}
-      table:not(.line-table) tbody{display:block}
-      table:not(.line-table) tr{display:block;background:var(--panel);border:1px solid var(--line);
+      table:not(.line-table):not(.rpt-grid){display:block}
+      table:not(.line-table):not(.rpt-grid) thead{display:none}
+      table:not(.line-table):not(.rpt-grid) tbody{display:block}
+      table:not(.line-table):not(.rpt-grid) tr{display:block;background:var(--panel);border:1px solid var(--line);
         border-radius:12px;box-shadow:var(--shadow);padding:6px 14px;margin-bottom:10px}
-      table:not(.line-table) tbody tr:hover td{background:transparent}
-      table:not(.line-table) td{display:flex;justify-content:space-between;align-items:center;gap:14px;
+      table:not(.line-table):not(.rpt-grid) tbody tr:hover td{background:transparent}
+      table:not(.line-table):not(.rpt-grid) td{display:flex;justify-content:space-between;align-items:center;gap:14px;
         padding:9px 0;border-bottom:1px solid var(--line);text-align:right;font-size:14px}
-      table:not(.line-table) tr td:last-child{border-bottom:0}
-      table:not(.line-table) td::before{content:attr(data-label);flex:0 0 auto;text-align:left;
+      table:not(.line-table):not(.rpt-grid) tr td:last-child{border-bottom:0}
+      table:not(.line-table):not(.rpt-grid) td::before{content:attr(data-label);flex:0 0 auto;text-align:left;
         color:var(--muted);font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.03em}
-      table:not(.line-table) td[data-label='']{justify-content:flex-end}
-      table:not(.line-table) td[data-label='']::before{display:none}
+      table:not(.line-table):not(.rpt-grid) td[data-label='']{justify-content:flex-end}
+      table:not(.line-table):not(.rpt-grid) td[data-label='']::before{display:none}
       /* Bảng nhập liệu (nếu có): xếp dọc, nhãn phía trên, ô nhập full-width */
       .line-table,.line-table tbody,.line-table tr,.line-table td{display:block;width:100%}
       .line-table thead{display:none}
@@ -290,7 +300,7 @@
     function loadingText(t='Đang tải…'){ return `<div class="loading-line"><span class="spin"></span><span>${esc(t)}</span></div>`; }
     // Gắn data-label (từ <thead th>) cho mỗi <td> → CSS xếp bảng thành thẻ trên điện thoại.
     function labelTableCells(root){
-      (root||document).querySelectorAll('table:not(.line-table)').forEach(tb=>{
+      (root||document).querySelectorAll('table:not(.line-table):not(.rpt-grid)').forEach(tb=>{
         const heads=[...tb.querySelectorAll('thead th')].map(th=>th.textContent.trim());
         if(!heads.length) return;
         tb.querySelectorAll('tbody tr').forEach(tr=>{
@@ -1524,23 +1534,49 @@
 
     // ---- Báo cáo tiêu hao tháng (S8) ----
     function fmtL(v){ const n=Number(v||0); return n===0?'0':n.toLocaleString('vi-VN',{maximumFractionDigits:3}); }
+    // 3 báo cáo tiêu hao (tái hiện 3 sheet Excel cũ).
+    const REPORT_KINDS=[['tonghop','Tổng hợp tiêu hao','rpc_report_monthly'],
+      ['daily','Diesel theo ngày','rpc_report_diesel_daily'],
+      ['detail','Diesel chi tiết (định mức)','rpc_report_diesel_detail']];
     async function renderReport(el){
       const now=new Date();
-      state.report=state.report||{ month:now.getMonth()+1, year:now.getFullYear() };
+      state.report=state.report||{ month:now.getMonth()+1, year:now.getFullYear(), kind:'tonghop' };
+      if(!state.report.kind) state.report.kind='tonghop';
       el.innerHTML=`<div class="panel">${loadingText()}</div>`;
       try{
-        const r=await call('rpc_report_monthly',{ p_month:state.report.month, p_year:state.report.year });
+        const rpc=(REPORT_KINDS.find(k=>k[0]===state.report.kind)||REPORT_KINDS[0])[2];
+        const r=await call(rpc,{ p_month:state.report.month, p_year:state.report.year });
         state.reportData=r; renderReportUI(el);
       }catch(err){ el.innerHTML=`<div class="panel"><span class="msg">${esc(err.message)}</span></div>`; }
     }
     function renderReportUI(el){
-      const d=state.reportData, tanks=d.tanks||[], oils=d.oils||[], rows=d.rows||[], t=d.totals||{};
+      const d=state.reportData, kind=state.report.kind;
       const mopts=Array.from({length:12},(_,i)=>`<option value="${i+1}" ${d.month===i+1?'selected':''}>Tháng ${i+1}</option>`).join('');
       const yrs=[]; for(let y=new Date().getFullYear()+1;y>=2024;y--) yrs.push(`<option value="${y}" ${d.year===y?'selected':''}>${y}</option>`);
+      const tabs=REPORT_KINDS.map(k=>`<button class="ghost sm ${k[0]===kind?'active':''}" data-rk="${k[0]}"
+        style="${k[0]===kind?'background:var(--accent);color:#fff;border-color:var(--accent)':''}">${esc(k[1])}</button>`).join(' ');
+      const built = kind==='daily'?reportDaily(d) : kind==='detail'?reportDetail(d) : reportTongHop(d);
+      el.innerHTML=`<div class="panel">
+        <div class="row" style="gap:6px;margin-bottom:12px">${tabs}</div>
+        <div class="row" style="align-items:flex-end">
+          <div style="flex:0;min-width:120px"><label>Tháng</label><select id="rpMonth">${mopts}</select></div>
+          <div style="flex:0;min-width:110px"><label>Năm</label><select id="rpYear">${yrs.join('')}</select></div>
+          <div style="flex:0"><button id="rpGo">Xem</button></div>
+          <div style="flex:0"><button class="ghost" id="rpXlsx">Tải Excel</button></div>
+        </div>
+        <p class="muted" style="margin-top:8px">${built.note}</p>
+        <div style="overflow:auto">${built.table}</div></div>`;
+      el.querySelectorAll('[data-rk]').forEach(b=> b.onclick=()=>{ state.report.kind=b.dataset.rk; renderReport(el); });
+      document.getElementById('rpGo').onclick=()=>{ state.report={ month:Number(val('rpMonth')), year:Number(val('rpYear')), kind }; renderReport(el); };
+      document.getElementById('rpXlsx').onclick=()=>exportReportXlsx();
+    }
+    // ---- Báo cáo 1: Tổng hợp tiêu hao (TONG HOP TIEU HAO) ----
+    function reportTongHop(d){
+      const tanks=d.tanks||[], oils=d.oils||[], rows=d.rows||[], t=d.totals||{};
+      const cell=(obj,id)=>fmtL(obj&&obj[id]);
       const head=`<tr><th>STT</th><th>Biển số xe</th>${tanks.map(k=>`<th>${esc(k.name)}</th>`).join('')}
         <th>Bơm ngoài</th><th>Tổng diesel</th>${oils.map(o=>`<th>${esc(o.name)}</th>`).join('')}
         <th>Tổng dầu khác</th><th>KM</th><th>Tịnh âm</th><th>Tiêu hao thực</th><th>L/100km</th><th>Tháng trước</th></tr>`;
-      const cell=(obj,id)=>fmtL(obj&&obj[id]);
       const body=rows.length?rows.map((r,i)=>`<tr>
         <td>${i+1}</td><td>${esc(r.plate)}</td>
         ${tanks.map(k=>`<td>${cell(r.tanks,k.id)}</td>`).join('')}
@@ -1551,40 +1587,90 @@
         <td>${r.lPer100==null?'—':fmtL(r.lPer100)}</td>
         <td class="muted">${r.lPer100Prev==null?'—':fmtL(r.lPer100Prev)}</td></tr>`).join('')
         :`<tr><td colspan="${tanks.length+oils.length+8}" class="muted">Không có dữ liệu trong kỳ này.</td></tr>`;
-      const totCols=tanks.length+ (oils.length) ;
       const foot=`<tr style="font-weight:800;background:var(--accent-soft)">
         <td colspan="2">TỔNG</td>${tanks.map(()=>'<td></td>').join('')}
         <td>${fmtL(t.bomNgoai)}</td><td>${fmtL(t.tongDiesel)}</td>${oils.map(()=>'<td></td>').join('')}
         <td>${fmtL(t.tongOilKhac)}</td><td>${fmtL(t.km)}</td><td>${fmtL(t.tinhAm)}</td>
         <td>${fmtL(t.tieuHaoThuc)}</td><td></td><td></td></tr>`;
-      el.innerHTML=`<div class="panel"><div class="row" style="align-items:flex-end">
-          <div style="flex:0;min-width:120px"><label>Tháng</label><select id="rpMonth">${mopts}</select></div>
-          <div style="flex:0;min-width:110px"><label>Năm</label><select id="rpYear">${yrs.join('')}</select></div>
-          <div style="flex:0"><button id="rpGo">Xem</button></div>
-          <div style="flex:0"><button class="ghost" id="rpXlsx">Tải Excel</button></div>
-        </div>
-        <p class="muted" style="margin-top:8px">Tiêu hao thực = Tổng diesel + Tịnh âm − Tịnh dương. L/100km = Tiêu hao thực ÷ KM × 100. Chỉ phiếu đã duyệt/legacy.</p>
-        <div style="overflow:auto"><table>${head}${body}${foot}</table></div></div>`;
-      document.getElementById('rpGo').onclick=()=>{ state.report={ month:Number(val('rpMonth')), year:Number(val('rpYear')) }; renderReport(el); };
-      document.getElementById('rpXlsx').onclick=()=>exportReportXlsx();
+      return { note:'Tiêu hao thực = Tổng diesel + Tịnh âm − Tịnh dương. L/100km = Tiêu hao thực ÷ KM × 100. Chỉ phiếu đã duyệt/legacy.',
+        table:`<table class="rpt-grid">${head}${body}${foot}</table>` };
+    }
+    // ---- Báo cáo 2: Diesel theo ngày (TIEU HAO DIESEL_2) ----
+    function reportDaily(d){
+      const rows=d.rows||[], t=d.totals||{}, dim=d.daysInMonth||31;
+      const days=Array.from({length:dim},(_,i)=>i+1);
+      const head=`<tr><th>STT</th><th>Biển số xe</th>${days.map(n=>`<th>${n}</th>`).join('')}
+        <th>Tổng xuất</th><th>Bơm ngoài</th><th>Tịnh âm</th><th>Tịnh dương</th><th>Tiêu hao thực</th>
+        <th>KM</th><th>L/100km</th><th>L/km</th><th>L/km tháng trước</th></tr>`;
+      const dcell=(obj,n)=>fmtL(obj&&obj[String(n)]);
+      const body=rows.length?rows.map((r,i)=>`<tr>
+        <td>${i+1}</td><td>${esc(r.plate)}</td>
+        ${days.map(n=>`<td>${dcell(r.days,n)}</td>`).join('')}
+        <td style="font-weight:700">${fmtL(r.tongXuat)}</td><td>${fmtL(r.bomNgoai)}</td>
+        <td>${fmtL(r.tinhAm)}</td><td>${fmtL(r.tinhDuong)}</td>
+        <td style="font-weight:700">${fmtL(r.tieuHaoThuc)}</td><td>${fmtL(r.km)}</td>
+        <td>${r.lPer100==null?'—':fmtL(r.lPer100)}</td><td>${r.lPerKm==null?'—':fmtL(r.lPerKm)}</td>
+        <td class="muted">${r.lPerKmPrev==null?'—':fmtL(r.lPerKmPrev)}</td></tr>`).join('')
+        :`<tr><td colspan="${dim+11}" class="muted">Không có dữ liệu trong kỳ này.</td></tr>`;
+      const foot=`<tr style="font-weight:800;background:var(--accent-soft)">
+        <td colspan="2">TỔNG</td>${days.map(()=>'<td></td>').join('')}
+        <td>${fmtL(t.tongXuat)}</td><td>${fmtL(t.bomNgoai)}</td><td>${fmtL(t.tinhAm)}</td>
+        <td>${fmtL(t.tinhDuong)}</td><td>${fmtL(t.tieuHaoThuc)}</td><td>${fmtL(t.km)}</td><td></td><td></td><td></td></tr>`;
+      return { note:'Lưới diesel xuất nội bộ theo từng ngày trong tháng. Tiêu hao thực = Tổng xuất + Bơm ngoài + Tịnh âm − Tịnh dương.',
+        table:`<table class="rpt-grid">${head}${body}${foot}</table>` };
+    }
+    // ---- Báo cáo 3: Diesel chi tiết theo định mức (TIEU HAO DIESEL_1) ----
+    function reportDetail(d){
+      const rows=d.rows||[], t=d.totals||{};
+      const head=`<tr><th>STT</th><th>Biển số xe</th><th>Định mức (L/100km)</th><th>Diesel từ téc</th>
+        <th>Bơm ngoài</th><th>Tổng diesel</th><th>KM</th><th>Tiêu hao thực</th><th>L/100km thực tế</th><th>Chênh lệch</th></tr>`;
+      const body=rows.length?rows.map((r,i)=>`<tr>
+        <td>${i+1}</td><td>${esc(r.plate)}</td><td>${r.dinhMuc?fmtL(r.dinhMuc):'—'}</td>
+        <td>${fmtL(r.dieselTec)}</td><td>${fmtL(r.bomNgoai)}</td><td style="font-weight:700">${fmtL(r.tongDiesel)}</td>
+        <td>${fmtL(r.km)}</td><td style="font-weight:700">${fmtL(r.tieuHaoThuc)}</td>
+        <td>${r.lPer100==null?'—':fmtL(r.lPer100)}</td>
+        <td style="${r.chenhLech!=null&&Number(r.chenhLech)>0?'color:var(--danger)':''}">${r.chenhLech==null?'—':fmtL(r.chenhLech)}</td></tr>`).join('')
+        :`<tr><td colspan="10" class="muted">Không có dữ liệu trong kỳ này.</td></tr>`;
+      const foot=`<tr style="font-weight:800;background:var(--accent-soft)">
+        <td colspan="3">TỔNG</td><td>${fmtL(t.dieselTec)}</td><td>${fmtL(t.bomNgoai)}</td><td>${fmtL(t.tongDiesel)}</td>
+        <td>${fmtL(t.km)}</td><td>${fmtL(t.tieuHaoThuc)}</td><td></td><td></td></tr>`;
+      return { note:'So sánh L/100km thực tế với Định mức (đặt ở Danh mục & Xe). Chênh lệch > 0 (đỏ) = vượt định mức.',
+        table:`<table class="rpt-grid">${head}${body}${foot}</table>` };
     }
     function exportReportXlsx(){
-      const d=state.reportData; if(!d||!window.XLSX){ toast('Chưa có dữ liệu.'); return; }
-      const tanks=d.tanks||[], oils=d.oils||[], rows=d.rows||[], t=d.totals||{};
-      const header=['STT','Biển số xe',...tanks.map(k=>k.name),'Bơm ngoài','Tổng diesel',
-        ...oils.map(o=>o.name),'Tổng dầu khác','KM','Tịnh âm','Tiêu hao thực','L/100km','L/100km tháng trước'];
-      const aoa=[[`TỔNG HỢP TIÊU HAO — Tháng ${d.month}/${d.year}`],[],header];
-      const N=v=>Number(v||0);
-      rows.forEach((r,i)=>aoa.push([i+1,r.plate,
-        ...tanks.map(k=>N(r.tanks&&r.tanks[k.id])),N(r.bomNgoai),N(r.tongDiesel),
-        ...oils.map(o=>N(r.otherOils&&r.otherOils[o.id])),N(r.tongOilKhac),N(r.km),N(r.tinhAm),
-        N(r.tieuHaoThuc),r.lPer100==null?'':N(r.lPer100),r.lPer100Prev==null?'':N(r.lPer100Prev)]));
-      aoa.push(['','TỔNG',...tanks.map(()=>''),N(t.bomNgoai),N(t.tongDiesel),
-        ...oils.map(()=>''),N(t.tongOilKhac),N(t.km),N(t.tinhAm),N(t.tieuHaoThuc),'','']);
+      const d=state.reportData, kind=state.report.kind; if(!d||!window.XLSX){ toast('Chưa có dữ liệu.'); return; }
+      const N=v=>Number(v||0); let aoa, title, sheet;
+      if(kind==='daily'){
+        const rows=d.rows||[], t=d.totals||{}, dim=d.daysInMonth||31, days=Array.from({length:dim},(_,i)=>i+1);
+        title=`TIÊU HAO DIESEL THEO NGÀY — Tháng ${d.month}/${d.year}`; sheet='Diesel theo ngay';
+        aoa=[[title],[],['STT','Biển số xe',...days,'Tổng xuất','Bơm ngoài','Tịnh âm','Tịnh dương','Tiêu hao thực','KM','L/100km','L/km','L/km tháng trước']];
+        rows.forEach((r,i)=>aoa.push([i+1,r.plate,...days.map(n=>N(r.days&&r.days[String(n)])),
+          N(r.tongXuat),N(r.bomNgoai),N(r.tinhAm),N(r.tinhDuong),N(r.tieuHaoThuc),N(r.km),
+          r.lPer100==null?'':N(r.lPer100),r.lPerKm==null?'':N(r.lPerKm),r.lPerKmPrev==null?'':N(r.lPerKmPrev)]));
+        aoa.push(['','TỔNG',...days.map(()=>''),N(t.tongXuat),N(t.bomNgoai),N(t.tinhAm),N(t.tinhDuong),N(t.tieuHaoThuc),N(t.km),'','','']);
+      } else if(kind==='detail'){
+        const rows=d.rows||[], t=d.totals||{};
+        title=`TIÊU HAO DIESEL CHI TIẾT — Tháng ${d.month}/${d.year}`; sheet='Diesel chi tiet';
+        aoa=[[title],[],['STT','Biển số xe','Định mức (L/100km)','Diesel từ téc','Bơm ngoài','Tổng diesel','KM','Tiêu hao thực','L/100km thực tế','Chênh lệch']];
+        rows.forEach((r,i)=>aoa.push([i+1,r.plate,r.dinhMuc==null?'':N(r.dinhMuc),N(r.dieselTec),N(r.bomNgoai),N(r.tongDiesel),
+          N(r.km),N(r.tieuHaoThuc),r.lPer100==null?'':N(r.lPer100),r.chenhLech==null?'':N(r.chenhLech)]));
+        aoa.push(['','TỔNG','',N(t.dieselTec),N(t.bomNgoai),N(t.tongDiesel),N(t.km),N(t.tieuHaoThuc),'','']);
+      } else {
+        const tanks=d.tanks||[], oils=d.oils||[], rows=d.rows||[], t=d.totals||{};
+        title=`TỔNG HỢP TIÊU HAO — Tháng ${d.month}/${d.year}`; sheet='Tong hop tieu hao';
+        aoa=[[title],[],['STT','Biển số xe',...tanks.map(k=>k.name),'Bơm ngoài','Tổng diesel',
+          ...oils.map(o=>o.name),'Tổng dầu khác','KM','Tịnh âm','Tiêu hao thực','L/100km','L/100km tháng trước']];
+        rows.forEach((r,i)=>aoa.push([i+1,r.plate,
+          ...tanks.map(k=>N(r.tanks&&r.tanks[k.id])),N(r.bomNgoai),N(r.tongDiesel),
+          ...oils.map(o=>N(r.otherOils&&r.otherOils[o.id])),N(r.tongOilKhac),N(r.km),N(r.tinhAm),
+          N(r.tieuHaoThuc),r.lPer100==null?'':N(r.lPer100),r.lPer100Prev==null?'':N(r.lPer100Prev)]));
+        aoa.push(['','TỔNG',...tanks.map(()=>''),N(t.bomNgoai),N(t.tongDiesel),
+          ...oils.map(()=>''),N(t.tongOilKhac),N(t.km),N(t.tinhAm),N(t.tieuHaoThuc),'','']);
+      }
       const ws=window.XLSX.utils.aoa_to_sheet(aoa);
       const wb=window.XLSX.utils.book_new();
-      window.XLSX.utils.book_append_sheet(wb, ws, `Tieu hao ${d.month}-${d.year}`);
-      window.XLSX.writeFile(wb, `tieu_hao_${d.year}_${String(d.month).padStart(2,'0')}.xlsx`);
+      window.XLSX.utils.book_append_sheet(wb, ws, sheet);
+      window.XLSX.writeFile(wb, `${sheet.replace(/ /g,'_')}_${d.year}_${String(d.month).padStart(2,'0')}.xlsx`);
     }
 
     // ---- Cảnh báo tồn + Web Push (S7) ----
