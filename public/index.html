@@ -163,6 +163,30 @@
       .tabbar .tab.active{color:var(--accent);background:var(--accent-soft)}
       .notif-panel{position:fixed;left:10px;right:10px;top:64px;width:auto}
     }
+    /* ---- Mobile: xếp bảng thành thẻ dọc ---- */
+    @media(max-width:760px){
+      table:not(.line-table){display:block}
+      table:not(.line-table) thead{display:none}
+      table:not(.line-table) tbody{display:block}
+      table:not(.line-table) tr{display:block;background:var(--panel);border:1px solid var(--line);
+        border-radius:12px;box-shadow:var(--shadow);padding:6px 14px;margin-bottom:10px}
+      table:not(.line-table) tbody tr:hover td{background:transparent}
+      table:not(.line-table) td{display:flex;justify-content:space-between;align-items:center;gap:14px;
+        padding:9px 0;border-bottom:1px solid var(--line);text-align:right;font-size:14px}
+      table:not(.line-table) tr td:last-child{border-bottom:0}
+      table:not(.line-table) td::before{content:attr(data-label);flex:0 0 auto;text-align:left;
+        color:var(--muted);font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.03em}
+      table:not(.line-table) td[data-label='']{justify-content:flex-end}
+      table:not(.line-table) td[data-label='']::before{display:none}
+      /* Bảng nhập liệu (nếu có): xếp dọc, nhãn phía trên, ô nhập full-width */
+      .line-table,.line-table tbody,.line-table tr,.line-table td{display:block;width:100%}
+      .line-table thead{display:none}
+      .line-table tr{margin-bottom:6px}
+      .line-table td{padding:2px 0;border:none}
+      .line-table td::before{content:attr(data-label);display:block;font-size:13px;color:var(--muted);
+        font-weight:600;margin:8px 0 4px}
+      .line-table input,.line-table select,.line-table textarea{width:100%}
+    }
   </style>
 </head>
 <body>
@@ -252,6 +276,19 @@
     function val(id){ return (document.getElementById(id)?.value || '').trim(); }
     function toast(t, type='ok'){ const e=document.getElementById('toast'); e.textContent=t; e.className=`toast ${type} show`; clearTimeout(toast._t); toast._t=setTimeout(()=>e.classList.remove('show'),2800); }
     function loadingText(t='Đang tải…'){ return `<div class="loading-line"><span class="spin"></span><span>${esc(t)}</span></div>`; }
+    // Gắn data-label (từ <thead th>) cho mỗi <td> → CSS xếp bảng thành thẻ trên điện thoại.
+    function labelTableCells(root){
+      (root||document).querySelectorAll('table:not(.line-table)').forEach(tb=>{
+        const heads=[...tb.querySelectorAll('thead th')].map(th=>th.textContent.trim());
+        if(!heads.length) return;
+        tb.querySelectorAll('tbody tr').forEach(tr=>{
+          [...tr.children].forEach((td,i)=>{
+            if(td.hasAttribute('data-label')) return;
+            td.setAttribute('data-label', heads[i]||'');
+          });
+        });
+      });
+    }
     // Khoá nút + hiện "Đang xử lý…" trong lúc chạy tác vụ; trả nút về trạng thái cũ khi xong.
     async function withBusy(btn, label, fn){
       const b = btn && btn.tagName ? btn : null; const old = b ? b.textContent : '';
@@ -1467,6 +1504,13 @@
       const top=document.createElement('button'); top.className='to-top'; top.id='toTop'; top.textContent='↑'; top.title='Lên đầu trang';
       top.onclick=()=>window.scrollTo({top:0,behavior:'smooth'}); document.body.appendChild(top);
       window.addEventListener('scroll',()=>{ top.classList.toggle('show',(window.scrollY||document.documentElement.scrollTop||0)>400); },{passive:true});
+    })();
+
+    // Tự gắn nhãn cột cho mọi bảng render vào vùng nội dung (kể cả tải bất đồng bộ).
+    (function initTableLabels(){
+      const host=document.getElementById('screen'); if(!host) return;
+      // Chỉ theo dõi childList (không theo dõi attribute) nên gắn data-label không tự kích hoạt lại.
+      new MutationObserver(()=>labelTableCells(host)).observe(host,{childList:true,subtree:true});
     })();
 
     (async function init(){
