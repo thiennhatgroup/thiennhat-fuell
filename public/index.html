@@ -571,7 +571,14 @@
     function statusCell(active){ return active?'<span class="badge">Hoạt động</span>':'<span class="muted">Ngừng</span>'; }
     function rowActions(kind, r){
       return `<button class="ghost sm" data-edit="${r.id}">Sửa</button>
-        <button class="ghost sm" data-toggle="${r.id}" data-active="${r.active?1:0}">${r.active?'Ngừng':'Bật'}</button>`;
+        <button class="ghost sm" data-toggle="${r.id}" data-active="${r.active?1:0}">${r.active?'Ngừng':'Bật'}</button>`
+        + (kind!=='txnType' ? `<button class="ghost sm" data-catdel="${r.id}" style="color:var(--danger)">Xóa</button>` : '');
+    }
+    async function catDelete(kind, id){
+      if(!confirm('Xóa vĩnh viễn mục này? Nếu đã có dữ liệu liên quan sẽ không xóa được — hãy dùng "Ngừng".')) return;
+      try{ await call('rpc_catalog_delete',{ p_kind:kind, p_id:id }); toast('Đã xóa.');
+        state.catalog=await call('rpc_catalog_list'); renderCatTab(); }
+      catch(err){ toast(err.message); }
     }
     async function catToggle(kind, id, active){
       try{ await call('rpc_catalog_toggle',{ p_kind:kind, p_id:id, p_active:!active }); toast('Đã cập nhật.');
@@ -713,6 +720,7 @@
     function wireEditToggle(body, kind){
       body.querySelectorAll('[data-edit]').forEach(b=> b.onclick=()=>{ state.catEdit=b.dataset.edit; renderCatTab(); });
       body.querySelectorAll('[data-toggle]').forEach(b=> b.onclick=()=>catToggle(kind, b.dataset.toggle, b.dataset.active==='1'));
+      body.querySelectorAll('[data-catdel]').forEach(b=> b.onclick=()=>catDelete(kind, b.dataset.catdel));
       ['tCancel','vCancel','oCancel','sCancel','xCancel'].forEach(id=>{
         const c=document.getElementById(id); if(c) c.onclick=()=>{ state.catEdit=null; renderCatTab(); };
       });
@@ -821,7 +829,7 @@
       document.getElementById('pSubmit').onclick=function(){ withBusy(this,'Đang submit…',()=>submitPumpDay(el)); };
       const c=document.getElementById('pCancel'); if(c) c.onclick=()=>{ state.pumpEdit=null; renderPumpUI(el); };
       renderPumpList();
-      if(e) renderPhotoSection(e.id, e.vehicleId);
+      if(e) renderPhotoSection(e.id, e.vehicleId, monthOf(e.entryDate));
     }
 
     function vehHasOdo(vehicleId){
@@ -832,8 +840,14 @@
       try{ const {data}=await sb.storage.from('chung-tu').createSignedUrl(path,300); return (data&&data.signedUrl)||''; }
       catch(_){ return ''; }
     }
+    // Storage chia folder theo tháng: <YYYY-MM>/<ledgerId>/<kind>-<ts>.<ext>.
+    function monthOf(dateStr){ return (dateStr && /^\d{4}-\d{2}/.test(dateStr) ? dateStr : new Date().toISOString()).slice(0,7); }
+    function photoPath(ym, ledgerId, kind, file){
+      const ext=((file.name||'').split('.').pop()||'jpg').toLowerCase().replace(/[^a-z0-9]/g,'')||'jpg';
+      return `${ym}/${ledgerId}/${kind}-${Date.now()}.${ext}`;
+    }
     const KIND_LABEL={ pump_meter:'Ảnh đồng hồ bơm', odometer:'Ảnh công-tơ-mét' };
-    async function renderPhotoSection(ledgerId, vehicleId){
+    async function renderPhotoSection(ledgerId, vehicleId, ym){
       const box=document.getElementById('photoBox'); if(!box) return;
       let photos=[];
       try{ photos=(await call('rpc_pump_photo_list',{p_ledger_id:ledgerId})).rows||[]; }
@@ -854,27 +868,26 @@
         }
       }
       box.innerHTML=`<div class="row">${parts.join('')}</div><div id="photoMsg" class="msg"></div>`;
-      box.querySelectorAll('input[type=file]').forEach(inp=> inp.onchange=()=>uploadPhoto(ledgerId, vehicleId, inp.dataset.kind, inp.files[0]));
-      box.querySelectorAll('[data-delphoto]').forEach(b=> b.onclick=()=>deletePhoto(ledgerId, vehicleId, b.dataset.delphoto));
+      box.querySelectorAll('input[type=file]').forEach(inp=> inp.onchange=()=>uploadPhoto(ledgerId, vehicleId, ym, inp.dataset.kind, inp.files[0]));
+      box.querySelectorAll('[data-delphoto]').forEach(b=> b.onclick=()=>deletePhoto(ledgerId, vehicleId, ym, b.dataset.delphoto));
     }
-    async function uploadPhoto(ledgerId, vehicleId, kind, file){
+    async function uploadPhoto(ledgerId, vehicleId, ym, kind, file){
       if(!file) return;
       const msg=document.getElementById('photoMsg'); if(msg){ msg.style.color='var(--muted)'; msg.textContent='Đang tải ảnh…'; }
       try{
-        const ext=((file.name||'').split('.').pop()||'jpg').toLowerCase().replace(/[^a-z0-9]/g,'')||'jpg';
-        const path=`${ledgerId}/${kind}-${Date.now()}.${ext}`;
+        const path=photoPath(ym, ledgerId, kind, file);
         const {error}=await sb.storage.from('chung-tu').upload(path, file, {contentType:file.type||'image/jpeg', upsert:false});
         if(error) throw error;
         await call('rpc_pump_photo_add',{p_ledger_id:ledgerId, p_kind:kind, p_path:path});
-        toast('Đã thêm ảnh.'); renderPhotoSection(ledgerId, vehicleId);
+        toast('Đã thêm ảnh.'); renderPhotoSection(ledgerId, vehicleId, ym);
       }catch(err){ if(msg){ msg.style.color='var(--danger)'; msg.textContent=err.message||'Tải ảnh thất bại.'; } }
     }
-    async function deletePhoto(ledgerId, vehicleId, photoId){
+    async function deletePhoto(ledgerId, vehicleId, ym, photoId){
       if(!confirm('Xóa ảnh này?')) return;
       try{
         const r=await call('rpc_pump_photo_delete',{p_id:photoId});
         if(r&&r.path){ try{ await sb.storage.from('chung-tu').remove([r.path]); }catch(_){} }
-        toast('Đã xóa ảnh.'); renderPhotoSection(ledgerId, vehicleId);
+        toast('Đã xóa ảnh.'); renderPhotoSection(ledgerId, vehicleId, ym);
       }catch(err){ toast(err.message); }
     }
 
@@ -1060,7 +1073,7 @@
         </div><div id="nMsg" class="msg"></div>
       </div>
       ${e?`<div class="panel"><h2>Ảnh chứng từ</h2>
-        <p class="muted" style="margin-top:-6px">Bắt buộc ≥1 ảnh phiếu nhập. Chụp trước khi Submit ngày.</p>
+        <p class="muted" style="margin-top:-6px">Bắt buộc <b>2 ảnh</b>: Biên bản giao nhận + Phiếu nhập kho. Chụp trước khi Submit ngày.</p>
         <div id="nPhotoBox" class="muted">Đang tải ảnh…</div></div>`:''}
       <div class="panel"><div class="row" style="align-items:center"><h2 style="flex:1;margin:0">Phiếu của tôi</h2>
         <button id="nSubmit" class="sm" style="flex:0">Submit ngày</button></div>
@@ -1080,47 +1093,50 @@
       document.getElementById('nSubmit').onclick=function(){ withBusy(this,'Đang submit…',()=>submitNhapDay(el)); };
       const c=document.getElementById('nCancel'); if(c) c.onclick=()=>{ state.nhapEdit=null; renderNhapUI(el); };
       renderNhapList();
-      if(e) renderReceiptSection(e.id);
+      if(e) renderReceiptSection(e.id, monthOf(e.entryDate));
     }
 
-    async function renderReceiptSection(ledgerId){
+    const NHAP_KIND_LABEL={ bien_ban_giao_nhan:'Ảnh biên bản giao nhận', phieu_nhap_kho:'Ảnh phiếu nhập kho' };
+    async function renderReceiptSection(ledgerId, ym){
       const box=document.getElementById('nPhotoBox'); if(!box) return;
       let photos=[];
       try{ photos=(await call('rpc_nhap_photo_list',{p_ledger_id:ledgerId})).rows||[]; }
       catch(err){ box.innerHTML=`<span class="msg">${esc(err.message)}</span>`; return; }
-      const parts=photos.map(p=>`<div style="flex:1;min-width:160px" data-slot="${p.id}"><label>Ảnh phiếu nhập</label>
-        <span class="muted">Đang tải…</span></div>`);
-      parts.push(`<div style="flex:1;min-width:160px"><label>Thêm ảnh phiếu nhập ${photos.length?'':'<span style="color:var(--danger)">*</span>'}</label>
-        <input type="file" accept="image/*" capture="environment" id="nPhotoInput"></div>`);
-      box.innerHTML=`<div class="row">${parts.join('')}</div><div id="nPhotoMsg" class="msg"></div>`;
-      for(const p of photos){
-        const slot=box.querySelector(`[data-slot="${p.id}"]`); if(!slot) continue;
-        const url=await signedUrl(p.path);
-        slot.innerHTML=`<label>Ảnh phiếu nhập</label>
-          ${url?`<a href="${esc(url)}" target="_blank"><img class="thumb" src="${esc(url)}"></a>`:'<div class="muted">Đã có ảnh.</div>'}
-          <div style="margin-top:6px"><button class="ghost sm" data-delreceipt="${p.id}">Xóa ảnh</button></div>`;
+      const slots=['bien_ban_giao_nhan','phieu_nhap_kho'];
+      const parts=[];
+      for(const kind of slots){
+        const p=photos.find(x=>x.kind===kind) || photos.find(x=>x.kind==='receipt' && kind==='bien_ban_giao_nhan');
+        if(p){
+          const url=await signedUrl(p.path);
+          parts.push(`<div style="flex:1;min-width:160px"><label>${NHAP_KIND_LABEL[kind]}</label>
+            ${url?`<a href="${esc(url)}" target="_blank"><img class="thumb" src="${esc(url)}"></a>`:'<div class="muted">Đã có ảnh.</div>'}
+            <div style="margin-top:6px"><button class="ghost sm" data-delreceipt="${p.id}">Xóa ảnh</button></div></div>`);
+        }else{
+          parts.push(`<div style="flex:1;min-width:160px"><label>${NHAP_KIND_LABEL[kind]} <span class="rq">*</span></label>
+            <input type="file" accept="image/*" capture="environment" data-kind="${kind}"></div>`);
+        }
       }
-      const inp=document.getElementById('nPhotoInput'); if(inp) inp.onchange=()=>uploadReceipt(ledgerId, inp.files[0]);
-      box.querySelectorAll('[data-delreceipt]').forEach(b=> b.onclick=()=>deleteReceipt(ledgerId, b.dataset.delreceipt));
+      box.innerHTML=`<div class="row">${parts.join('')}</div><div id="nPhotoMsg" class="msg"></div>`;
+      box.querySelectorAll('input[type=file]').forEach(inp=> inp.onchange=()=>uploadReceipt(ledgerId, ym, inp.dataset.kind, inp.files[0]));
+      box.querySelectorAll('[data-delreceipt]').forEach(b=> b.onclick=()=>deleteReceipt(ledgerId, ym, b.dataset.delreceipt));
     }
-    async function uploadReceipt(ledgerId, file){
+    async function uploadReceipt(ledgerId, ym, kind, file){
       if(!file) return;
       const msg=document.getElementById('nPhotoMsg'); if(msg){ msg.style.color='var(--muted)'; msg.textContent='Đang tải ảnh…'; }
       try{
-        const ext=((file.name||'').split('.').pop()||'jpg').toLowerCase().replace(/[^a-z0-9]/g,'')||'jpg';
-        const path=`${ledgerId}/receipt-${Date.now()}.${ext}`;
+        const path=photoPath(ym, ledgerId, kind, file);
         const {error}=await sb.storage.from('chung-tu').upload(path, file, {contentType:file.type||'image/jpeg', upsert:false});
         if(error) throw error;
-        await call('rpc_nhap_photo_add',{p_ledger_id:ledgerId, p_path:path});
-        toast('Đã thêm ảnh.'); renderReceiptSection(ledgerId);
+        await call('rpc_nhap_photo_add',{p_ledger_id:ledgerId, p_kind:kind, p_path:path});
+        toast('Đã thêm ảnh.'); renderReceiptSection(ledgerId, ym);
       }catch(err){ if(msg){ msg.style.color='var(--danger)'; msg.textContent=err.message||'Tải ảnh thất bại.'; } }
     }
-    async function deleteReceipt(ledgerId, photoId){
+    async function deleteReceipt(ledgerId, ym, photoId){
       if(!confirm('Xóa ảnh này?')) return;
       try{
         const r=await call('rpc_nhap_photo_delete',{p_id:photoId});
         if(r&&r.path){ try{ await sb.storage.from('chung-tu').remove([r.path]); }catch(_){} }
-        toast('Đã xóa ảnh.'); renderReceiptSection(ledgerId);
+        toast('Đã xóa ảnh.'); renderReceiptSection(ledgerId, ym);
       }catch(err){ toast(err.message); }
     }
 
@@ -1142,8 +1158,8 @@
       }catch(err){ msg.textContent=err.message; }
     }
     async function submitNhapDay(el){
-      if(!confirm('Submit toàn bộ phiếu nhập Nháp để chuyển sang Chờ đối chiếu?')) return;
-      try{ const r=await call('rpc_nhap_submit_day'); toast(`Đã submit ${r.count} phiếu.`);
+      if(!confirm('Submit toàn bộ phiếu nhập Nháp? Phiếu sẽ được duyệt thẳng và vào tồn kho ngay.')) return;
+      try{ const r=await call('rpc_nhap_submit_day'); toast(`Đã nhập & duyệt ${r.count} phiếu vào tồn.`);
         await loadNhapMine(); renderNhapUI(el); }
       catch(err){ toast(err.message); }
     }
@@ -1230,6 +1246,7 @@
     function invFlag(r){
       if(Number(r.closing)<0) return '<span class="badge" style="background:var(--danger);color:#fff">Tồn âm</span>';
       if(r.capacity>0 && Number(r.closing)>Number(r.capacity)) return '<span class="badge" style="background:#B26B00;color:#fff">Vượt sức chứa</span>';
+      if(r.leadTimeDays>0 && r.daysLeft!=null && Number(r.daysLeft)<=Number(r.leadTimeDays)) return '<span class="badge" style="background:var(--danger);color:#fff">Cần đặt hàng ngay</span>';
       if(r.reorderPoint>0 && Number(r.closing)<=Number(r.reorderPoint)) return '<span class="badge" style="background:#B26B00;color:#fff">Dưới điểm đặt hàng</span>';
       return '';
     }
@@ -1246,26 +1263,37 @@
       const rows=state.stock||[], canSet=can('adjust:manage');
       const table = rows.length
         ? `<table><thead><tr><th>Téc</th><th>Loại dầu</th><th>Tồn đầu</th><th>Nhập</th><th>Xuất</th>
-            <th>Tồn cuối</th><th>Sức chứa</th><th style="min-width:140px">% đầy</th><th></th></tr></thead><tbody>
+            <th>Tồn cuối</th><th>Sức chứa</th><th style="min-width:140px">% đầy</th>
+            <th>TH BQ/ngày (tuần)</th><th>TH BQ/ngày (tháng)</th><th>Ngày tồn còn lại</th>
+            <th>Chờ NCC (ngày)</th><th>Tồn tối thiểu</th><th></th></tr></thead><tbody>
             ${rows.map(r=>`<tr>
               <td>${esc(r.tankName||'')}</td><td>${esc(r.oilTypeName||'')}</td>
               <td>${fmtNum(r.opening)}</td><td>${fmtNum(r.nhap)}</td><td>${fmtNum(r.xuat)}</td>
               <td style="font-weight:700${Number(r.closing)<0?';color:var(--danger)':''}">${fmtNum(r.closing)}</td>
-              <td>${fmtNum(r.capacity)}</td><td>${pctBar(r)}</td><td>${invFlag(r)}</td>
+              <td>${fmtNum(r.capacity)}</td><td>${pctBar(r)}</td>
+              <td>${fmtNum(r.avgDailyWeek)}</td><td>${fmtNum(r.avgDailyMonth)}</td>
+              <td>${r.daysLeft!=null?fmtNum(r.daysLeft):'<span class="muted">—</span>'}</td>
+              <td>${fmtNum(r.leadTimeDays)}</td><td>${fmtNum(r.minStock)}</td>
+              <td>${invFlag(r)}</td>
             </tr>`).join('')}</tbody></table>`
         : '<span class="muted">Chưa có téc nào (thêm ở Danh mục & Xe).</span>';
       el.innerHTML=`<div class="panel"><div class="row" style="align-items:center">
           <h2 style="flex:1;margin:0">Tồn kho thời gian thực</h2>
           <button class="ghost sm" id="invReload" style="flex:0">Tải lại</button></div>
-        <p class="muted" style="margin-top:4px">Tồn cuối = Tồn đầu + Nhập − Xuất (chỉ phiếu đã duyệt). Bơm ngoài không trừ tồn téc.</p>
+        <p class="muted" style="margin-top:4px">Tồn cuối = Tồn đầu + Nhập − Xuất (chỉ phiếu đã duyệt). Bơm ngoài không trừ tồn téc.
+          TH BQ/ngày = tiêu hao trung bình (xuất) 7 & 30 ngày gần nhất. Ngày tồn còn lại = Tồn cuối ÷ TH BQ tháng.
+          Chờ NCC = lead-time đặt ở Danh mục. Tồn tối thiểu = TH BQ tháng × Chờ NCC.</p>
         <div style="margin-top:8px">${table}</div></div>
         ${canSet?`<div class="panel"><h2>Đặt tồn đầu gốc</h2>
           <p class="muted" style="margin-top:-6px">Chỉ Kế toán. Đặt một lần theo giá trị đo tay tại mốc khởi tạo.</p>
           <div class="row">
-            <div><label>Téc</label><select id="opTank"><option value="">— chọn téc —</option>
-              ${rows.map(r=>`<option value="${r.tankId}">${esc(r.tankName)}</option>`).join('')}</select></div>
-            <div><label>Tồn đầu (lít)</label><input id="opLit" inputmode="decimal"></div>
-            <div><label>Mốc (ngày)</label><input id="opDate" type="date"></div>
+            <div><label>Téc <span class="rq">*</span></label><select id="opTank" class="req"><option value="">— chọn téc —</option>
+              ${rows.map(r=>`<option value="${r.tankId}">${esc(r.tankName)}</option>`).join('')}</select>
+              <div class="fnote">Chọn téc cần đặt tồn đầu. Chọn xong sẽ hiện giá trị hiện tại (nếu có).</div></div>
+            <div><label>Tồn đầu (lít) <span class="rq">*</span></label><input id="opLit" class="req" inputmode="decimal">
+              <div class="fnote">Số lít đo tay tại mốc khởi tạo. Không được âm.</div></div>
+            <div><label>Mốc (ngày) <span class="rq">*</span></label><input id="opDate" class="req" type="date">
+              <div class="fnote">Ngày ứng với số tồn đầu đo tay ở trên.</div></div>
           </div>
           <div style="margin-top:12px"><button id="opSave" style="flex:0">Lưu tồn đầu</button></div>
           <div id="opMsg" class="msg"></div></div>`:''}`;
