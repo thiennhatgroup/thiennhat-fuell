@@ -1,5 +1,5 @@
 // Service worker: PWA cài được + offline vỏ app (network-first) + Web Push (S7).
-const CACHE = 'tn-fuel-v1';
+const CACHE = 'tn-fuel-v3';
 const SHELL = [
   './',
   './index.html',
@@ -34,8 +34,14 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return; // để Supabase/CDN đi thẳng
 
+  // Vỏ app (điều hướng + mã nguồn) BỎ QUA cache HTTP của trình duyệt để luôn lấy bản mới
+  // sau khi deploy (GitHub Pages đặt max-age ~10 phút → nếu không sẽ thấy bản cũ).
+  const isShell = req.mode === 'navigate'
+    || url.pathname.endsWith('/')
+    || /\.(html|js|webmanifest)$/.test(url.pathname);
+
   event.respondWith(
-    fetch(req)
+    fetch(req, isShell ? { cache: 'reload' } : undefined)
       .then((res) => {
         if (res && res.ok && res.type === 'basic') {
           const copy = res.clone();

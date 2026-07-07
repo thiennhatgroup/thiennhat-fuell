@@ -7,7 +7,7 @@
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" type="image/png" href="./logo.png">
   <link rel="apple-touch-icon" sizes="192x192" href="./icon-192.png">
-  <meta name="theme-color" content="#0E5AA7">
+  <meta name="theme-color" content="#E8620C">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -19,7 +19,7 @@
   </script>
   <style>
     :root{--bg:#F4F6FA;--panel:#fff;--ink:#1E2A38;--muted:#64707E;--line:#E4EAF1;
-      --accent:#0E5AA7;--accent-dark:#093F73;--accent-soft:#E7F0FA;--orange:#B26B00;
+      --accent:#E8620C;--accent-dark:#B34D08;--accent-soft:#FCEEE3;--orange:#B26B00;
       --ok:#1E8E5A;--danger:#D14343;--input:#F5F8FC;
       --shadow:0 1px 2px rgba(16,40,70,.06),0 4px 16px rgba(16,40,70,.05);}
     *{box-sizing:border-box}
@@ -74,6 +74,15 @@
       table.rpt-grid th,table.rpt-grid td{display:table-cell;white-space:nowrap}
       table.rpt-grid td::before{display:none}
     }
+    /* Báo cáo nhiều cột: đóng băng cột STT + Biển số xe khi cuộn ngang. */
+    table.rpt-grid th:nth-child(1),table.rpt-grid td:nth-child(1),
+    table.rpt-grid th:nth-child(2),table.rpt-grid td:nth-child(2){
+      position:sticky;background:var(--panel);z-index:2}
+    table.rpt-grid th:nth-child(1),table.rpt-grid td:nth-child(1){left:0;min-width:42px;width:42px}
+    table.rpt-grid th:nth-child(2),table.rpt-grid td:nth-child(2){left:42px;min-width:96px;box-shadow:2px 0 0 var(--line)}
+    table.rpt-grid thead th:nth-child(1),table.rpt-grid thead th:nth-child(2){z-index:3}
+    table.rpt-grid tbody tr:hover td:nth-child(1),table.rpt-grid tbody tr:hover td:nth-child(2){background:#FAFBFD}
+    table.rpt-grid tr.rpt-foot td{background:var(--accent-soft)}
     .hidden{display:none!important}
     /* ---- Sub-tab nav (catalog) ---- */
     .nav{display:flex;gap:8px;overflow-x:auto;padding:10px 16px;background:#fff;border-bottom:1px solid var(--line);position:sticky;top:57px;z-index:10}
@@ -168,6 +177,15 @@
     .inv-chips .chip .muted{font-size:11px}
     .inv-chips .chip b{font-size:15px}
     @media(max-width:520px){ .inv-chips{grid-template-columns:1fr 1fr} }
+    /* Nhóm téc dầu chuyên dụng: thu gọn, click mới xổ ra. */
+    .inv-group{margin-top:12px;border:1px solid var(--line);border-radius:14px;background:var(--panel);overflow:hidden}
+    .inv-group-h{width:100%;text-align:left;background:var(--accent-soft);color:var(--accent-dark);border:none;box-shadow:none;
+      font-weight:800;font-size:13.5px;padding:12px 14px;display:flex;justify-content:space-between;align-items:center;
+      gap:10px;cursor:pointer;min-height:auto}
+    .inv-group-h .caret{transition:transform .2s;font-size:12px}
+    .inv-group-body{padding:12px}
+    .inv-group.collapsed .inv-group-body{display:none}
+    .inv-group.collapsed .inv-group-h .caret{transform:rotate(-90deg)}
     .toast{position:fixed;left:50%;bottom:80px;transform:translateX(-50%) translateY(12px);background:#1E2A38;color:#fff;
       padding:12px 18px;border-radius:12px;opacity:0;transition:.18s ease;z-index:70;max-width:90%;font-weight:700;box-shadow:0 8px 24px rgba(0,0,0,.18)}
     .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
@@ -778,6 +796,11 @@
           <div><label>Biển số</label><input id="vPlate" value="${e?esc(e.plate):''}" placeholder="51C-123.45"></div>
           <div><label>Định mức bơm</label><input id="vNorm" inputmode="decimal" value="${e?esc(e.pumpNorm):''}"></div>
         </div>
+        <div class="row" style="margin-top:12px">
+          <div><label>Đơn vị</label><select id="vEntity">
+            ${['Thiên Nhật','Lâm Hải'].map(x=>`<option value="${x}" ${((e&&e.entity)||'Thiên Nhật')===x?'selected':''}>${x}</option>`).join('')}
+          </select></div>
+        </div>
         <label style="display:flex;align-items:center;gap:8px;margin-top:12px">
           <input type="checkbox" id="vOdo" style="width:auto;min-height:auto" ${(!e||e.hasOdometer)?'checked':''}> Có công-tơ-mét (đồng hồ KM)</label>
         <div class="row" style="margin-top:12px;flex:0">
@@ -785,14 +808,15 @@
           ${e?'<button class="ghost" id="vCancel" style="flex:0">Hủy</button>':''}
         </div><div id="vMsg" class="msg"></div></div>
         <div class="panel"><h2>Danh sách xe</h2>${rows.length?`<table><thead><tr>
-          <th>Biển số</th><th>Định mức bơm</th><th>Công-tơ-mét</th><th>Trạng thái</th><th></th></tr></thead><tbody>
-          ${rows.map(r=>`<tr><td>${esc(r.plate)}</td><td>${fmtNum(r.pumpNorm)}</td>
+          <th>Biển số</th><th>Đơn vị</th><th>Định mức bơm</th><th>Công-tơ-mét</th><th>Trạng thái</th><th></th></tr></thead><tbody>
+          ${rows.map(r=>`<tr><td>${esc(r.plate)}</td><td>${esc(r.entity||'Thiên Nhật')}</td><td>${fmtNum(r.pumpNorm)}</td>
             <td>${r.hasOdometer?'Có':'Không'}</td><td>${statusCell(r.active)}</td>
             <td style="white-space:nowrap">${rowActions('vehicle',r)}</td></tr>`).join('')}
           </tbody></table>`:'<span class="muted">Chưa có xe.</span>'}</div>`;
       document.getElementById('vSave').onclick=()=>catSave('rpc_vehicle_upsert',{
         p_id:e?e.id:null, p_plate:val('vPlate'), p_pump_norm:num(val('vNorm')),
-        p_has_odometer:document.getElementById('vOdo').checked, p_active:e?e.active:true },'vMsg');
+        p_has_odometer:document.getElementById('vOdo').checked, p_active:e?e.active:true,
+        p_entity:val('vEntity') },'vMsg');
       wireEditToggle(body,'vehicle');
     }
 
@@ -1087,7 +1111,7 @@
       box.innerHTML=`<table><thead><tr><th>Số phiếu</th><th>Xe</th><th>Loại GD</th><th>Téc</th>
         <th>Lít</th><th>KM đi</th><th>Trạng thái</th><th></th></tr></thead><tbody>
         ${rows.map(r=>`<tr>
-          <td><a href="#" data-detail="${r.id}" style="color:var(--brand,#0E5AA7);font-weight:600">${r.code?esc(r.code):'(nháp)'}</a>${r.rejectReason?`<div class="msg" style="min-height:0">Trả về: ${esc(r.rejectReason)}</div>`:''}</td>
+          <td><a href="#" data-detail="${r.id}" style="color:var(--accent);font-weight:600">${r.code?esc(r.code):'(nháp)'}</a>${r.rejectReason?`<div class="msg" style="min-height:0">Trả về: ${esc(r.rejectReason)}</div>`:''}</td>
           <td>${esc(r.plate||'')}</td><td>${esc(r.txnName||'')}</td><td>${esc(r.tankName||'')}</td>
           <td>${fmtNum(r.liters)}</td><td>${r.kmRun!=null?fmtNum(r.kmRun):''}</td>
           <td><span class="badge">${STATUS_LABEL[r.status]||esc(r.status)}</span></td>
@@ -1157,7 +1181,7 @@
           <th>Ngày</th><th>Số phiếu</th><th>Loại</th><th>Xe/NCC</th><th>Téc</th><th>Số lít</th><th>Trạng thái</th></tr></thead><tbody>
         ${rows.map(r=>`<tr>
           <td>${esc(r.entryDate||'')}</td>
-          <td><a href="#" data-rvdetail="${r.id}" style="color:var(--brand,#0E5AA7);font-weight:600">${esc(r.code||'(nháp)')}</a></td>
+          <td><a href="#" data-rvdetail="${r.id}" style="color:var(--accent);font-weight:600">${esc(r.code||'(nháp)')}</a></td>
           <td>${r.entryType==='nhap'?'Nhập':'Bơm'}</td>
           <td>${esc(r.entryType==='nhap'?(r.supplierName||''):(r.vehiclePlate||r.supplierName||''))}</td>
           <td>${esc(r.tankName||'')}</td><td>${fmtNum(r.liters)}</td>
@@ -1406,7 +1430,7 @@
       box.innerHTML=`<table><thead><tr><th>Số phiếu</th><th>NCC</th><th>Téc</th><th>Loại dầu</th>
         <th>Lít</th><th>Đơn giá</th><th>Thành tiền</th><th>Trạng thái</th><th></th></tr></thead><tbody>
         ${rows.map(r=>`<tr>
-          <td><a href="#" data-ndetail="${r.id}" style="color:var(--brand,#0E5AA7);font-weight:600">${r.code?esc(r.code):'(nháp)'}</a>${r.rejectReason?`<div class="msg" style="min-height:0">Trả về: ${esc(r.rejectReason)}</div>`:''}${r.supplierInvoiceNo?`<div class="muted" style="font-size:12px">HĐ: ${esc(r.supplierInvoiceNo)}</div>`:''}</td>
+          <td><a href="#" data-ndetail="${r.id}" style="color:var(--accent);font-weight:600">${r.code?esc(r.code):'(nháp)'}</a>${r.rejectReason?`<div class="msg" style="min-height:0">Trả về: ${esc(r.rejectReason)}</div>`:''}${r.supplierInvoiceNo?`<div class="muted" style="font-size:12px">HĐ: ${esc(r.supplierInvoiceNo)}</div>`:''}</td>
           <td>${esc(r.supplierName||'')}</td><td>${esc(r.tankName||'')}</td><td>${esc(r.oilTypeName||'')}</td>
           <td>${fmtNum(r.liters)}</td><td>${fmtNum(r.unitPrice)}</td><td>${fmtNum(r.amount)}</td>
           <td><span class="badge">${STATUS_LABEL[r.status]||esc(r.status)}</span></td>
@@ -1544,11 +1568,46 @@
         ${flag?`<div style="margin-top:10px">${flag}</div>`:''}
       </div>`;
     }
+    // Chuẩn hoá tiếng Việt (bỏ dấu, thường hoá) để phân loại/sắp xếp téc.
+    function normVi(s){ return String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\u0111/g,'d').trim(); }
+    // Téc diesel chính (Téc 1/2/3, cát nghiền) vs téc dầu chuyên dụng (cầu/số/thủy lực/động cơ).
+    function isDieselTank(r){ const o=normVi(r.oilTypeName); return o===''||o.startsWith('do')||o.includes('diesel'); }
+    // Thứ tự ưu tiên hiển thị các téc diesel chính.
+    function tankRank(name){ const n=normVi(name);
+      if(/\btec\s*1\b/.test(n)) return 1;
+      if(/\btec\s*2\b/.test(n)) return 2;
+      if(/\btec\s*3\b/.test(n)) return 3;
+      if(n.includes('cat nghien')) return 4;
+      return 5; }
+    // Header + một dòng bảng chi tiết tồn kho (dùng lại cho nhóm chính & nhóm chuyên dụng).
+    function invDetailTable(list){
+      const head=`<thead><tr><th>Téc</th><th>Loại dầu</th><th>Tồn đầu</th><th>Nhập</th><th>Xuất</th>
+          <th>Tồn cuối</th><th>Sức chứa</th><th style="min-width:140px">% đầy</th>
+          <th>TH BQ/ngày (tuần)</th><th>TH BQ/ngày (tháng)</th><th>Ngày tồn còn lại</th>
+          <th>Chờ NCC (ngày)</th><th>Tồn tối thiểu</th><th></th></tr></thead>`;
+      const body=list.map(r=>`<tr>
+          <td>${esc(r.tankName||'')}</td><td>${esc(r.oilTypeName||'')}</td>
+          <td>${fmtNum(r.opening)}</td><td>${fmtNum(r.nhap)}</td><td>${fmtNum(r.xuat)}</td>
+          <td style="font-weight:700${Number(r.closing)<0?';color:var(--danger)':''}">${fmtNum(r.closing)}</td>
+          <td>${fmtNum(r.capacity)}</td><td>${pctBar(r)}</td>
+          <td>${fmtNum(r.avgDailyWeek)}</td><td>${fmtNum(r.avgDailyMonth)}</td>
+          <td>${r.daysLeft!=null?fmtNum(r.daysLeft):'<span class="muted">—</span>'}</td>
+          <td>${fmtNum(r.leadTimeDays)}</td><td>${fmtNum(r.minStock)}</td>
+          <td>${invFlag(r)}</td></tr>`).join('');
+      return `<div style="overflow-x:auto"><table>${head}<tbody>${body}</tbody></table></div>`;
+    }
     function renderInventoryUI(el){
       const rows=state.stock||[];
+      // Tách nhóm: diesel chính (sắp theo ưu tiên) trước, dầu chuyên dụng gom vào 1 mục.
+      const mainRows=rows.filter(isDieselTank)
+        .sort((a,b)=> tankRank(a.tankName)-tankRank(b.tankName) || String(a.tankName||'').localeCompare(String(b.tankName||''),'vi'));
+      const specialRows=rows.filter(r=>!isDieselTank(r))
+        .sort((a,b)=> String(a.tankName||'').localeCompare(String(b.tankName||''),'vi'));
       // Thống kê tổng hợp toàn kho.
       const totClosing=rows.reduce((a,r)=>a+Number(r.closing||0),0);
       const totCap=rows.reduce((a,r)=>a+Number(r.capacity||0),0);
+      const totAvgMonth=rows.reduce((a,r)=>a+Number(r.avgDailyMonth||0),0);
+      const totAvgWeek=rows.reduce((a,r)=>a+Number(r.avgDailyWeek||0),0);
       const usePct=totCap>0?Math.round(totClosing/totCap*100):null;
       const needOrder=rows.filter(r=>
         (Number(r.leadTimeDays)>0 && r.daysLeft!=null && Number(r.daysLeft)<=Number(r.leadTimeDays))
@@ -1557,27 +1616,21 @@
         <div class="stat"><div class="k">Số téc đang theo dõi</div><div class="v">${rows.length}</div></div>
         <div class="stat"><div class="k">Tổng tồn hiện tại</div><div class="v">${fmtNum(totClosing)} <span style="font-size:13px;font-weight:600">lít</span></div></div>
         <div class="stat"><div class="k">Tổng sức chứa</div><div class="v">${fmtNum(totCap)} <span style="font-size:13px;font-weight:600">lít</span></div></div>
+        <div class="stat"><div class="k">Tiêu hao TB/ngày toàn kho</div><div class="v">${fmtNum(totAvgMonth)} <span style="font-size:13px;font-weight:600">lít</span><div class="muted" style="font-size:11px;font-weight:600;margin-top:2px">30 ngày · 7 ngày: ${fmtNum(totAvgWeek)} lít</div></div></div>
         <div class="stat"><div class="k">Mức sử dụng chung</div><div class="v" style="color:${usePct!=null&&usePct>100?'#B26B00':'inherit'}">${usePct!=null?usePct+'%':'—'}</div></div>
         <div class="stat"><div class="k">Số téc cần đặt hàng</div><div class="v" style="color:${needOrder>0?'var(--danger)':'inherit'}">${needOrder}</div></div>
       </div>`;
+      const specialGroup=(bodyHtml,count)=>`<div class="inv-group collapsed" style="margin-top:14px">
+          <button class="inv-group-h" onclick="this.closest('.inv-group').classList.toggle('collapsed')">
+            <span>Dầu chuyên dụng (${count}) — dầu cầu, dầu số, thủy lực, động cơ</span><span class="caret">▾</span></button>
+          <div class="inv-group-body">${bodyHtml}</div></div>`;
       const cards = rows.length
-        ? `<div class="inv-grid">${rows.map(invCard).join('')}</div>`
+        ? `${mainRows.length?`<div class="inv-grid">${mainRows.map(invCard).join('')}</div>`:''}
+           ${specialRows.length?specialGroup(`<div class="inv-grid" style="margin-top:0">${specialRows.map(invCard).join('')}</div>`,specialRows.length):''}`
         : '<span class="muted">Chưa có téc nào (thêm ở Danh mục & Xe).</span>';
       const table = rows.length
-        ? `<div style="overflow-x:auto"><table><thead><tr><th>Téc</th><th>Loại dầu</th><th>Tồn đầu</th><th>Nhập</th><th>Xuất</th>
-            <th>Tồn cuối</th><th>Sức chứa</th><th style="min-width:140px">% đầy</th>
-            <th>TH BQ/ngày (tuần)</th><th>TH BQ/ngày (tháng)</th><th>Ngày tồn còn lại</th>
-            <th>Chờ NCC (ngày)</th><th>Tồn tối thiểu</th><th></th></tr></thead><tbody>
-            ${rows.map(r=>`<tr>
-              <td>${esc(r.tankName||'')}</td><td>${esc(r.oilTypeName||'')}</td>
-              <td>${fmtNum(r.opening)}</td><td>${fmtNum(r.nhap)}</td><td>${fmtNum(r.xuat)}</td>
-              <td style="font-weight:700${Number(r.closing)<0?';color:var(--danger)':''}">${fmtNum(r.closing)}</td>
-              <td>${fmtNum(r.capacity)}</td><td>${pctBar(r)}</td>
-              <td>${fmtNum(r.avgDailyWeek)}</td><td>${fmtNum(r.avgDailyMonth)}</td>
-              <td>${r.daysLeft!=null?fmtNum(r.daysLeft):'<span class="muted">—</span>'}</td>
-              <td>${fmtNum(r.leadTimeDays)}</td><td>${fmtNum(r.minStock)}</td>
-              <td>${invFlag(r)}</td>
-            </tr>`).join('')}</tbody></table></div>`
+        ? `${mainRows.length?invDetailTable(mainRows):''}
+           ${specialRows.length?specialGroup(invDetailTable(specialRows),specialRows.length):''}`
         : '';
       el.innerHTML=`<div class="panel"><div class="row" style="align-items:center">
           <h2 style="flex:1;margin:0">Tồn kho thời gian thực</h2>
@@ -1586,7 +1639,7 @@
         <div class="panel"><h2 style="margin:0 0 2px">Mức tồn theo từng téc</h2>
           <p class="muted" style="margin:0">Thanh màu cho biết lượng dầu hiện có so với sức chứa của téc.</p>
           ${cards}</div>
-        ${table?`<div class="panel"><h2 style="margin:0 0 8px">Bảng số liệu chi tiết</h2>${table}</div>`:''}`;
+        ${rows.length?`<div class="panel"><h2 style="margin:0 0 8px">Bảng số liệu chi tiết</h2>${table}</div>`:''}`;
       document.getElementById('invReload').onclick=()=>renderInventory(el);
     }
 
@@ -1926,10 +1979,14 @@
       el.innerHTML=`<div class="panel">${loadingText()}</div>`;
       try{
         const rpc=(REPORT_KINDS.find(k=>k[0]===state.report.kind)||REPORT_KINDS[0])[2];
-        const r=await call(rpc,{ p_month:state.report.month, p_year:state.report.year });
+        const r=await call(rpc,{ p_month:state.report.month, p_year:state.report.year,
+          p_from:state.report.from||null, p_to:state.report.to||null });
         state.reportData=r; renderReportUI(el);
       }catch(err){ el.innerHTML=`<div class="panel"><span class="msg">${esc(err.message)}</span></div>`; }
     }
+    // Khoảng ngày mặc định (đầu → cuối tháng) tránh lệch múi giờ khi dùng toISOString.
+    function monthBounds(m,y){ const pad=n=>String(n).padStart(2,'0'); const last=new Date(y,m,0).getDate();
+      return [`${y}-${pad(m)}-01`, `${y}-${pad(m)}-${pad(last)}`]; }
     function renderReportUI(el){
       const d=state.reportData, kind=state.report.kind;
       const mopts=Array.from({length:12},(_,i)=>`<option value="${i+1}" ${d.month===i+1?'selected':''}>Tháng ${i+1}</option>`).join('');
@@ -1939,119 +1996,171 @@
       const built = kind==='daily'?reportDaily(d) : kind==='detail'?reportDetail(d) : reportTongHop(d);
       el.innerHTML=`<div class="panel">
         <div class="row" style="gap:6px;margin-bottom:12px">${tabs}</div>
-        <div class="row" style="align-items:flex-end">
+        <div class="row" style="align-items:flex-end;flex-wrap:wrap;gap:10px">
           <div style="flex:0;min-width:120px"><label>Tháng</label><select id="rpMonth">${mopts}</select></div>
           <div style="flex:0;min-width:110px"><label>Năm</label><select id="rpYear">${yrs.join('')}</select></div>
+          <div style="flex:0;min-width:150px"><label>Từ ngày</label><input type="date" id="rpFrom" value="${esc(d.from||'')}"></div>
+          <div style="flex:0;min-width:150px"><label>Đến ngày</label><input type="date" id="rpTo" value="${esc(d.to||'')}"></div>
           <div style="flex:0"><button id="rpGo">Xem</button></div>
           <div style="flex:0"><button class="ghost" id="rpXlsx">Tải Excel</button></div>
         </div>
+        <p class="muted" style="margin:6px 0 0;font-size:12px">Khoảng đang xem: ${esc(d.from||'')} → ${esc(d.to||'')} (mặc định là cả tháng; đổi Tháng/Năm sẽ tự đặt lại khoảng).</p>
         <p class="muted" style="margin-top:8px">${built.note}</p>
         <div style="overflow:auto">${built.table}</div></div>`;
       el.querySelectorAll('[data-rk]').forEach(b=> b.onclick=()=>{ state.report.kind=b.dataset.rk; renderReport(el); });
-      document.getElementById('rpGo').onclick=()=>{ state.report={ month:Number(val('rpMonth')), year:Number(val('rpYear')), kind }; renderReport(el); };
+      // Đổi Tháng/Năm → đặt lại Từ/Đến ngày = đầu/cuối tháng đó.
+      const resetBounds=()=>{ const [f,t]=monthBounds(Number(val('rpMonth')),Number(val('rpYear')));
+        document.getElementById('rpFrom').value=f; document.getElementById('rpTo').value=t; };
+      document.getElementById('rpMonth').onchange=resetBounds;
+      document.getElementById('rpYear').onchange=resetBounds;
+      document.getElementById('rpGo').onclick=()=>{ state.report={ month:Number(val('rpMonth')), year:Number(val('rpYear')),
+        from:val('rpFrom')||null, to:val('rpTo')||null, kind }; renderReport(el); };
       document.getElementById('rpXlsx').onclick=()=>exportReportXlsx();
     }
     // ---- Báo cáo 1: Tổng hợp tiêu hao (TONG HOP TIEU HAO) ----
+    // Báo cáo tách theo đơn vị (entity). Nhóm dòng, giữ thứ tự Thiên Nhật → Lâm Hải.
+    const REPORT_ENTITIES=['Thiên Nhật','Lâm Hải'];
+    function groupByEntity(rows){
+      const map={}; (rows||[]).forEach(r=>{ const k=r.entity||'Thiên Nhật'; (map[k]=map[k]||[]).push(r); });
+      const order=REPORT_ENTITIES.filter(e=>map[e]); Object.keys(map).forEach(k=>{ if(!order.includes(k)) order.push(k); });
+      return order.map(e=>[e,map[e]]);
+    }
+    function sumBy(rows,f){ return (rows||[]).reduce((a,r)=>a+Number(f(r)||0),0); }
+    // Dựng các bảng con theo đơn vị. renderTable(subset)→HTML một <table>. Rỗng → 1 bảng trống.
+    function entitySplit(rows, renderTable){
+      const groups=groupByEntity(rows);
+      if(!groups.length) return renderTable([]);
+      return groups.map(([name,sub])=>`<div style="margin-bottom:18px">
+        <h3 style="margin:6px 0;color:var(--accent-dark)">${esc(name)} <span class="muted" style="font-weight:600;font-size:13px">(${sub.length} xe)</span></h3>
+        ${renderTable(sub)}</div>`).join('');
+    }
     function reportTongHop(d){
-      const tanks=d.tanks||[], oils=d.oils||[], rows=d.rows||[], t=d.totals||{};
+      const tanks=d.tanks||[], oils=d.oils||[], rows=d.rows||[];
       const cell=(obj,id)=>fmtL(obj&&obj[id]);
       const head=`<tr><th>STT</th><th>Biển số xe</th>${tanks.map(k=>`<th>${esc(k.name)}</th>`).join('')}
         <th>Bơm ngoài</th><th>Tổng diesel</th>${oils.map(o=>`<th>${esc(o.name)}</th>`).join('')}
         <th>Tổng dầu khác</th><th>KM</th><th>Tịnh âm</th><th>Tiêu hao thực</th><th>L/100km</th><th>Tháng trước</th></tr>`;
-      const body=rows.length?rows.map((r,i)=>`<tr>
-        <td>${i+1}</td><td>${esc(r.plate)}</td>
-        ${tanks.map(k=>`<td>${cell(r.tanks,k.id)}</td>`).join('')}
-        <td>${fmtL(r.bomNgoai)}</td><td style="font-weight:700">${fmtL(r.tongDiesel)}</td>
-        ${oils.map(o=>`<td>${cell(r.otherOils,o.id)}</td>`).join('')}
-        <td>${fmtL(r.tongOilKhac)}</td><td>${fmtL(r.km)}</td><td>${fmtL(r.tinhAm)}</td>
-        <td style="font-weight:700">${fmtL(r.tieuHaoThuc)}</td>
-        <td>${r.lPer100==null?'—':fmtL(r.lPer100)}</td>
-        <td class="muted">${r.lPer100Prev==null?'—':fmtL(r.lPer100Prev)}</td></tr>`).join('')
-        :`<tr><td colspan="${tanks.length+oils.length+8}" class="muted">Không có dữ liệu trong kỳ này.</td></tr>`;
-      const foot=`<tr style="font-weight:800;background:var(--accent-soft)">
-        <td colspan="2">TỔNG</td>${tanks.map(()=>'<td></td>').join('')}
-        <td>${fmtL(t.bomNgoai)}</td><td>${fmtL(t.tongDiesel)}</td>${oils.map(()=>'<td></td>').join('')}
-        <td>${fmtL(t.tongOilKhac)}</td><td>${fmtL(t.km)}</td><td>${fmtL(t.tinhAm)}</td>
-        <td>${fmtL(t.tieuHaoThuc)}</td><td></td><td></td></tr>`;
+      const groupTable=(sub)=>{
+        const body=sub.length?sub.map((r,i)=>`<tr>
+          <td>${i+1}</td><td>${esc(r.plate)}</td>
+          ${tanks.map(k=>`<td>${cell(r.tanks,k.id)}</td>`).join('')}
+          <td>${fmtL(r.bomNgoai)}</td><td style="font-weight:700">${fmtL(r.tongDiesel)}</td>
+          ${oils.map(o=>`<td>${cell(r.otherOils,o.id)}</td>`).join('')}
+          <td>${fmtL(r.tongOilKhac)}</td><td>${fmtL(r.km)}</td><td>${fmtL(r.tinhAm)}</td>
+          <td style="font-weight:700">${fmtL(r.tieuHaoThuc)}</td>
+          <td>${r.lPer100==null?'—':fmtL(r.lPer100)}</td>
+          <td class="muted">${r.lPer100Prev==null?'—':fmtL(r.lPer100Prev)}</td></tr>`).join('')
+          :`<tr><td colspan="${tanks.length+oils.length+8}" class="muted">Không có dữ liệu trong kỳ này.</td></tr>`;
+        const foot=`<tr class="rpt-foot" style="font-weight:800">
+          <td>TỔNG</td><td></td>${tanks.map(()=>'<td></td>').join('')}
+          <td>${fmtL(sumBy(sub,r=>r.bomNgoai))}</td><td>${fmtL(sumBy(sub,r=>r.tongDiesel))}</td>${oils.map(()=>'<td></td>').join('')}
+          <td>${fmtL(sumBy(sub,r=>r.tongOilKhac))}</td><td>${fmtL(sumBy(sub,r=>r.km))}</td><td>${fmtL(sumBy(sub,r=>r.tinhAm))}</td>
+          <td>${fmtL(sumBy(sub,r=>r.tieuHaoThuc))}</td><td></td><td></td></tr>`;
+        return `<table class="rpt-grid">${head}${body}${foot}</table>`;
+      };
       return { note:'Tiêu hao thực = Tổng diesel + Tịnh âm − Tịnh dương. L/100km = Tiêu hao thực ÷ KM × 100. Chỉ phiếu đã duyệt/legacy.',
-        table:`<table class="rpt-grid">${head}${body}${foot}</table>` };
+        table:entitySplit(rows, groupTable) };
     }
     // ---- Báo cáo 2: Diesel theo ngày (TIEU HAO DIESEL_2) ----
     function reportDaily(d){
-      const rows=d.rows||[], t=d.totals||{}, dim=d.daysInMonth||31;
+      const rows=d.rows||[], dim=d.daysInMonth||31;
       const days=Array.from({length:dim},(_,i)=>i+1);
       const head=`<tr><th>STT</th><th>Biển số xe</th>${days.map(n=>`<th>${n}</th>`).join('')}
         <th>Tổng xuất</th><th>Bơm ngoài</th><th>Tịnh âm</th><th>Tịnh dương</th><th>Tiêu hao thực</th>
         <th>KM</th><th>L/100km</th><th>L/km</th><th>L/km tháng trước</th></tr>`;
       const dcell=(obj,n)=>fmtL(obj&&obj[String(n)]);
-      const body=rows.length?rows.map((r,i)=>`<tr>
-        <td>${i+1}</td><td>${esc(r.plate)}</td>
-        ${days.map(n=>`<td>${dcell(r.days,n)}</td>`).join('')}
-        <td style="font-weight:700">${fmtL(r.tongXuat)}</td><td>${fmtL(r.bomNgoai)}</td>
-        <td>${fmtL(r.tinhAm)}</td><td>${fmtL(r.tinhDuong)}</td>
-        <td style="font-weight:700">${fmtL(r.tieuHaoThuc)}</td><td>${fmtL(r.km)}</td>
-        <td>${r.lPer100==null?'—':fmtL(r.lPer100)}</td><td>${r.lPerKm==null?'—':fmtL(r.lPerKm)}</td>
-        <td class="muted">${r.lPerKmPrev==null?'—':fmtL(r.lPerKmPrev)}</td></tr>`).join('')
-        :`<tr><td colspan="${dim+11}" class="muted">Không có dữ liệu trong kỳ này.</td></tr>`;
-      const foot=`<tr style="font-weight:800;background:var(--accent-soft)">
-        <td colspan="2">TỔNG</td>${days.map(()=>'<td></td>').join('')}
-        <td>${fmtL(t.tongXuat)}</td><td>${fmtL(t.bomNgoai)}</td><td>${fmtL(t.tinhAm)}</td>
-        <td>${fmtL(t.tinhDuong)}</td><td>${fmtL(t.tieuHaoThuc)}</td><td>${fmtL(t.km)}</td><td></td><td></td><td></td></tr>`;
+      const groupTable=(sub)=>{
+        const body=sub.length?sub.map((r,i)=>`<tr>
+          <td>${i+1}</td><td>${esc(r.plate)}</td>
+          ${days.map(n=>`<td>${dcell(r.days,n)}</td>`).join('')}
+          <td style="font-weight:700">${fmtL(r.tongXuat)}</td><td>${fmtL(r.bomNgoai)}</td>
+          <td>${fmtL(r.tinhAm)}</td><td>${fmtL(r.tinhDuong)}</td>
+          <td style="font-weight:700">${fmtL(r.tieuHaoThuc)}</td><td>${fmtL(r.km)}</td>
+          <td>${r.lPer100==null?'—':fmtL(r.lPer100)}</td><td>${r.lPerKm==null?'—':fmtL(r.lPerKm)}</td>
+          <td class="muted">${r.lPerKmPrev==null?'—':fmtL(r.lPerKmPrev)}</td></tr>`).join('')
+          :`<tr><td colspan="${dim+11}" class="muted">Không có dữ liệu trong kỳ này.</td></tr>`;
+        const foot=`<tr class="rpt-foot" style="font-weight:800">
+          <td>TỔNG</td><td></td>${days.map(()=>'<td></td>').join('')}
+          <td>${fmtL(sumBy(sub,r=>r.tongXuat))}</td><td>${fmtL(sumBy(sub,r=>r.bomNgoai))}</td><td>${fmtL(sumBy(sub,r=>r.tinhAm))}</td>
+          <td>${fmtL(sumBy(sub,r=>r.tinhDuong))}</td><td>${fmtL(sumBy(sub,r=>r.tieuHaoThuc))}</td><td>${fmtL(sumBy(sub,r=>r.km))}</td><td></td><td></td><td></td></tr>`;
+        return `<table class="rpt-grid">${head}${body}${foot}</table>`;
+      };
       return { note:'Lưới diesel xuất nội bộ theo từng ngày trong tháng. Tiêu hao thực = Tổng xuất + Bơm ngoài + Tịnh âm − Tịnh dương.',
-        table:`<table class="rpt-grid">${head}${body}${foot}</table>` };
+        table:entitySplit(rows, groupTable) };
     }
     // ---- Báo cáo 3: Diesel chi tiết theo định mức (TIEU HAO DIESEL_1) ----
     function reportDetail(d){
-      const rows=d.rows||[], t=d.totals||{};
+      const rows=d.rows||[];
       const head=`<tr><th>STT</th><th>Biển số xe</th><th>Định mức (L/100km)</th><th>Diesel từ téc</th>
         <th>Bơm ngoài</th><th>Tổng diesel</th><th>KM</th><th>Tiêu hao thực</th><th>L/100km thực tế</th><th>Chênh lệch</th></tr>`;
-      const body=rows.length?rows.map((r,i)=>`<tr>
-        <td>${i+1}</td><td>${esc(r.plate)}</td><td>${r.dinhMuc?fmtL(r.dinhMuc):'—'}</td>
-        <td>${fmtL(r.dieselTec)}</td><td>${fmtL(r.bomNgoai)}</td><td style="font-weight:700">${fmtL(r.tongDiesel)}</td>
-        <td>${fmtL(r.km)}</td><td style="font-weight:700">${fmtL(r.tieuHaoThuc)}</td>
-        <td>${r.lPer100==null?'—':fmtL(r.lPer100)}</td>
-        <td style="${r.chenhLech!=null&&Number(r.chenhLech)>0?'color:var(--danger)':''}">${r.chenhLech==null?'—':fmtL(r.chenhLech)}</td></tr>`).join('')
-        :`<tr><td colspan="10" class="muted">Không có dữ liệu trong kỳ này.</td></tr>`;
-      const foot=`<tr style="font-weight:800;background:var(--accent-soft)">
-        <td colspan="3">TỔNG</td><td>${fmtL(t.dieselTec)}</td><td>${fmtL(t.bomNgoai)}</td><td>${fmtL(t.tongDiesel)}</td>
-        <td>${fmtL(t.km)}</td><td>${fmtL(t.tieuHaoThuc)}</td><td></td><td></td></tr>`;
+      const groupTable=(sub)=>{
+        const body=sub.length?sub.map((r,i)=>`<tr>
+          <td>${i+1}</td><td>${esc(r.plate)}</td><td>${r.dinhMuc?fmtL(r.dinhMuc):'—'}</td>
+          <td>${fmtL(r.dieselTec)}</td><td>${fmtL(r.bomNgoai)}</td><td style="font-weight:700">${fmtL(r.tongDiesel)}</td>
+          <td>${fmtL(r.km)}</td><td style="font-weight:700">${fmtL(r.tieuHaoThuc)}</td>
+          <td>${r.lPer100==null?'—':fmtL(r.lPer100)}</td>
+          <td style="${r.chenhLech!=null&&Number(r.chenhLech)>0?'color:var(--danger)':''}">${r.chenhLech==null?'—':fmtL(r.chenhLech)}</td></tr>`).join('')
+          :`<tr><td colspan="10" class="muted">Không có dữ liệu trong kỳ này.</td></tr>`;
+        const foot=`<tr class="rpt-foot" style="font-weight:800">
+          <td>TỔNG</td><td></td><td></td><td>${fmtL(sumBy(sub,r=>r.dieselTec))}</td><td>${fmtL(sumBy(sub,r=>r.bomNgoai))}</td><td>${fmtL(sumBy(sub,r=>r.tongDiesel))}</td>
+          <td>${fmtL(sumBy(sub,r=>r.km))}</td><td>${fmtL(sumBy(sub,r=>r.tieuHaoThuc))}</td><td></td><td></td></tr>`;
+        return `<table class="rpt-grid">${head}${body}${foot}</table>`;
+      };
       return { note:'So sánh L/100km thực tế với Định mức (đặt ở Danh mục & Xe). Chênh lệch > 0 (đỏ) = vượt định mức.',
-        table:`<table class="rpt-grid">${head}${body}${foot}</table>` };
+        table:entitySplit(rows, groupTable) };
     }
     function exportReportXlsx(){
       const d=state.reportData, kind=state.report.kind; if(!d||!window.XLSX){ toast('Chưa có dữ liệu.'); return; }
-      const N=v=>Number(v||0); let aoa, title, sheet;
+      const N=v=>Number(v||0), S=(sub,key)=>sumBy(sub,r=>r[key]);
+      const period=(d.from&&d.to)?`${d.from} → ${d.to}`:`Tháng ${d.month}/${d.year}`;
+      let baseTitle, sheetBase, header, mapRow, mapFoot;
       if(kind==='daily'){
-        const rows=d.rows||[], t=d.totals||{}, dim=d.daysInMonth||31, days=Array.from({length:dim},(_,i)=>i+1);
-        title=`TIÊU HAO DIESEL THEO NGÀY — Tháng ${d.month}/${d.year}`; sheet='Diesel theo ngay';
-        aoa=[[title],[],['STT','Biển số xe',...days,'Tổng xuất','Bơm ngoài','Tịnh âm','Tịnh dương','Tiêu hao thực','KM','L/100km','L/km','L/km tháng trước']];
-        rows.forEach((r,i)=>aoa.push([i+1,r.plate,...days.map(n=>N(r.days&&r.days[String(n)])),
+        const dim=d.daysInMonth||31, days=Array.from({length:dim},(_,i)=>i+1);
+        baseTitle='TIÊU HAO DIESEL THEO NGÀY'; sheetBase='Diesel ngay';
+        header=['STT','Biển số xe',...days,'Tổng xuất','Bơm ngoài','Tịnh âm','Tịnh dương','Tiêu hao thực','KM','L/100km','L/km','L/km tháng trước','Ghi chú'];
+        mapRow=(r,i)=>[i+1,r.plate,...days.map(n=>N(r.days&&r.days[String(n)])),
           N(r.tongXuat),N(r.bomNgoai),N(r.tinhAm),N(r.tinhDuong),N(r.tieuHaoThuc),N(r.km),
-          r.lPer100==null?'':N(r.lPer100),r.lPerKm==null?'':N(r.lPerKm),r.lPerKmPrev==null?'':N(r.lPerKmPrev)]));
-        aoa.push(['','TỔNG',...days.map(()=>''),N(t.tongXuat),N(t.bomNgoai),N(t.tinhAm),N(t.tinhDuong),N(t.tieuHaoThuc),N(t.km),'','','']);
+          r.lPer100==null?'':N(r.lPer100),r.lPerKm==null?'':N(r.lPerKm),r.lPerKmPrev==null?'':N(r.lPerKmPrev),''];
+        mapFoot=sub=>['','TỔNG',...days.map(()=>''),S(sub,'tongXuat'),S(sub,'bomNgoai'),S(sub,'tinhAm'),
+          S(sub,'tinhDuong'),S(sub,'tieuHaoThuc'),S(sub,'km'),'','','',''];
       } else if(kind==='detail'){
-        const rows=d.rows||[], t=d.totals||{};
-        title=`TIÊU HAO DIESEL CHI TIẾT — Tháng ${d.month}/${d.year}`; sheet='Diesel chi tiet';
-        aoa=[[title],[],['STT','Biển số xe','Định mức (L/100km)','Diesel từ téc','Bơm ngoài','Tổng diesel','KM','Tiêu hao thực','L/100km thực tế','Chênh lệch']];
-        rows.forEach((r,i)=>aoa.push([i+1,r.plate,r.dinhMuc==null?'':N(r.dinhMuc),N(r.dieselTec),N(r.bomNgoai),N(r.tongDiesel),
-          N(r.km),N(r.tieuHaoThuc),r.lPer100==null?'':N(r.lPer100),r.chenhLech==null?'':N(r.chenhLech)]));
-        aoa.push(['','TỔNG','',N(t.dieselTec),N(t.bomNgoai),N(t.tongDiesel),N(t.km),N(t.tieuHaoThuc),'','']);
+        // Bám sát sheet TIEU HAO DIESEL_1: thêm cột nhập tay để kế toán điền sau khi export.
+        baseTitle='TIÊU HAO DIESEL CHI TIẾT'; sheetBase='Diesel chi tiet';
+        header=['STT','Biển số xe','Dầu tồn đầu kỳ (thủ kho)','Dầu tồn cuối kỳ (thủ kho)',
+          'Định mức (L/100km)','Diesel từ téc','Bơm ngoài','Tổng diesel',
+          'KM theo phiếu bơm','KM đầu tháng (đồng hồ)','KM cuối tháng (đồng hồ)','KM theo đồng hồ','Đồng hồ − phiếu bơm',
+          'Bơm bom','Số chuyến','Định mức bơm bom','Bơm đầu xe',
+          'Tiêu hao thực','L/100km thực tế','Chênh lệch','Ghi chú'];
+        mapRow=(r,i)=>[i+1,r.plate,'','',
+          r.dinhMuc==null?'':N(r.dinhMuc),N(r.dieselTec),N(r.bomNgoai),N(r.tongDiesel),
+          N(r.km),'','','','',
+          '','','','',
+          N(r.tieuHaoThuc),r.lPer100==null?'':N(r.lPer100),r.chenhLech==null?'':N(r.chenhLech),''];
+        mapFoot=sub=>['','TỔNG','','','',S(sub,'dieselTec'),S(sub,'bomNgoai'),S(sub,'tongDiesel'),
+          S(sub,'km'),'','','','','','','','',S(sub,'tieuHaoThuc'),'','',''];
       } else {
-        const tanks=d.tanks||[], oils=d.oils||[], rows=d.rows||[], t=d.totals||{};
-        title=`TỔNG HỢP TIÊU HAO — Tháng ${d.month}/${d.year}`; sheet='Tong hop tieu hao';
-        aoa=[[title],[],['STT','Biển số xe',...tanks.map(k=>k.name),'Bơm ngoài','Tổng diesel',
-          ...oils.map(o=>o.name),'Tổng dầu khác','KM','Tịnh âm','Tiêu hao thực','L/100km','L/100km tháng trước']];
-        rows.forEach((r,i)=>aoa.push([i+1,r.plate,
-          ...tanks.map(k=>N(r.tanks&&r.tanks[k.id])),N(r.bomNgoai),N(r.tongDiesel),
+        const tanks=d.tanks||[], oils=d.oils||[];
+        baseTitle='TỔNG HỢP TIÊU HAO'; sheetBase='Tong hop';
+        header=['STT','Biển số xe',...tanks.map(k=>k.name),'Bơm ngoài','Tổng diesel',
+          ...oils.map(o=>o.name),'Tổng dầu khác','KM','Tịnh âm','Tiêu hao thực','L/100km','L/100km tháng trước','Ghi chú'];
+        mapRow=(r,i)=>[i+1,r.plate,...tanks.map(k=>N(r.tanks&&r.tanks[k.id])),N(r.bomNgoai),N(r.tongDiesel),
           ...oils.map(o=>N(r.otherOils&&r.otherOils[o.id])),N(r.tongOilKhac),N(r.km),N(r.tinhAm),
-          N(r.tieuHaoThuc),r.lPer100==null?'':N(r.lPer100),r.lPer100Prev==null?'':N(r.lPer100Prev)]));
-        aoa.push(['','TỔNG',...tanks.map(()=>''),N(t.bomNgoai),N(t.tongDiesel),
-          ...oils.map(()=>''),N(t.tongOilKhac),N(t.km),N(t.tinhAm),N(t.tieuHaoThuc),'','']);
+          N(r.tieuHaoThuc),r.lPer100==null?'':N(r.lPer100),r.lPer100Prev==null?'':N(r.lPer100Prev),''];
+        mapFoot=sub=>['','TỔNG',...tanks.map(()=>''),S(sub,'bomNgoai'),S(sub,'tongDiesel'),
+          ...oils.map(()=>''),S(sub,'tongOilKhac'),S(sub,'km'),S(sub,'tinhAm'),S(sub,'tieuHaoThuc'),'','',''];
       }
-      const ws=window.XLSX.utils.aoa_to_sheet(aoa);
-      const wb=window.XLSX.utils.book_new();
-      window.XLSX.utils.book_append_sheet(wb, ws, sheet);
-      window.XLSX.writeFile(wb, `${sheet.replace(/ /g,'_')}_${d.year}_${String(d.month).padStart(2,'0')}.xlsx`);
+      const wb=window.XLSX.utils.book_new(); const used={};
+      const addSheet=(name,sub)=>{
+        const aoa=[[`${baseTitle} — ${name} — ${period}`],[],header];
+        sub.forEach((r,i)=>aoa.push(mapRow(r,i)));
+        aoa.push(mapFoot(sub));
+        let sn=`${sheetBase} ${name}`.replace(/[\\\/\?\*\[\]:]/g,' ').slice(0,31);
+        while(used[sn]) sn=(sn.slice(0,29)+' '+(Object.keys(used).length)).slice(0,31); used[sn]=1;
+        window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(aoa), sn);
+      };
+      const groups=groupByEntity(d.rows||[]);
+      if(groups.length) groups.forEach(([name,sub])=>addSheet(name,sub)); else addSheet('Tất cả',[]);
+      window.XLSX.writeFile(wb, `${sheetBase.replace(/ /g,'_')}_${d.year}_${String(d.month).padStart(2,'0')}.xlsx`);
     }
 
     // ---- Cảnh báo tồn + Web Push (S7) ----
