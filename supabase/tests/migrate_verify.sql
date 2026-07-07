@@ -1,6 +1,6 @@
 -- ============================================================================
--- migrate_verify.sql — S9 đối soát sau khi chạy 0014_migrate_legacy.sql.
--- Chạy trong SQL Editor SAU khi deploy 0014 (KHÔNG rollback — chỉ đọc + RAISE).
+-- migrate_verify.sql — S9 đối soát sau khi chạy 0016_migrate_legacy.sql.
+-- Chạy trong SQL Editor SAU khi deploy 0016 (KHÔNG rollback — chỉ đọc + RAISE).
 -- Kiểm: (1) số dòng khớp, (2) tổng lít theo tháng/téc giữa Sổ cái và bảng nạp thô,
 -- (3) tổng phân bổ tịnh = tịnh kỳ, (4) in tồn hiện tại từng téc để mắt-so với
 -- Tồn thực tế của kỳ tịnh gần nhất. Dòng lệch được liệt kê để duyệt tay.

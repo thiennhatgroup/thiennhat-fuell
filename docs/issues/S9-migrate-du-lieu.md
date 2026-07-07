@@ -12,10 +12,11 @@ Nhập ~5.997 dòng DATA_GOC vào Sổ cái với cờ legacy + trạng thái Da
 ## Blocked by
 - S6
 
-## Đã build (0014_migrate_legacy.sql + verify)
+## Đã build (0016_migrate_legacy.sql + verify)
 - **Phát hiện**: DATA_GOC thực có **1.725 dòng** (không phải 5.997 — 5997 chỉ là dải
   filter); dữ liệu chạy **1/1/2026 → 6/7/2026** (là dữ liệu năm nay của sheet cũ).
-- `0014_migrate_legacy.sql` sinh tự động từ Excel: `alter ledger.liters → numeric(14,3)`
+- `0016_migrate_legacy.sql` sinh tự động từ Excel (đánh số 0016 để chạy sau 0015 đã deploy):
+  `alter ledger.liters → numeric(14,3)`
   (giữ 3 số lẻ bơm ngoài, vd 458.218); bảng nạp thô `_legacy_data_goc` + 1.725 dòng;
   transform → `ledger` (legacy=true, DaDuyet), resolve tên qua `normalize_text` (hoa/thường
   & dấu; xử lý biến thể `28h00603`, `Công trình Asphalt`). Nguồn = téc vật lý → gắn `tank_id`;
@@ -26,6 +27,6 @@ Nhập ~5.997 dòng DATA_GOC vào Sổ cái với cờ legacy + trạng thái Da
 - Seed **18 kỳ tịnh cũ** (DaChot) từ TINH_TEC + phân bổ tịnh cho xe theo lít-trong-kỳ.
 - Idempotent qua cờ `app_config.legacy_migrated` (chạy lại bỏ qua).
 - `supabase/tests/migrate_verify.sql`: đối soát số dòng + tổng lít theo tháng/téc (log lệch)
-  + tổng phân bổ = tịnh kỳ + in tồn hiện tại từng téc. **Chạy sau deploy 0014.**
-- **Dữ liệu legacy chỉ THỰC SỰ vào DB khi 0014 được push lên `main` và Action "Deploy
+  + tổng phân bổ = tịnh kỳ + in tồn hiện tại từng téc. **Chạy sau deploy 0016.**
+- **Dữ liệu legacy chỉ THỰC SỰ vào DB khi 0016 được push lên `main` và Action "Deploy
   Supabase migrations" chạy `supabase db push`.**

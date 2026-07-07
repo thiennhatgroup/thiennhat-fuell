@@ -1,5 +1,6 @@
 -- ============================================================================
--- 0014_migrate_legacy.sql — S9 Migrate dữ liệu lịch sử từ File nhap lieu xang dau_v11.xlsx.
+-- 0016_migrate_legacy.sql — S9 Migrate dữ liệu lịch sử từ File nhap lieu xang dau_v11.xlsx.
+-- (Đánh số 0016 để chạy SAU 0015 đã áp dụng trên DB — tránh migration lùi thứ tự.)
 -- Nguồn: sheet DATA_GOC (1725 dòng BOM/NHAP) + TINH_TEC (18 kỳ đã chốt).
 -- Nạp vào Sổ cái với legacy=true + status='DaDuyet' (MIỄN ảnh & đối chiếu),
 -- seed Tồn đầu gốc 1/1/2026 + các kỳ tịnh cũ (DaChot) + phân bổ tịnh cho xe.

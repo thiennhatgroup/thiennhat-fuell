@@ -21,5 +21,5 @@ Tái hiện từng sheet báo cáo cũ 1-1: TIEU_HAO_DIESEL_1, TIEU_HAO_DIESEL_2
   tịnh dương; **L/100km** = tiêu hao thực ÷ KM × 100 + **L/100km tháng trước** để so sánh; + dòng TỔNG.
 - FE màn **Báo cáo tháng**: chọn tháng/năm, bảng cột téc động, nút **⬇ Tải Excel**
   (SheetJS, tái hiện bảng TỔNG HỢP TIÊU HAO). Chỉ phiếu DaDuyet/legacy.
-- **Regression số học so file gốc thực hiện sau khi deploy 0014+0015** (cache trong file
+- **Regression số học so file gốc thực hiện sau khi deploy 0015+0016** (cache trong file
   Excel đã cũ so với DATA_GOC hiện tại; nguồn chuẩn là DATA_GOC + công thức SUMIFS).
