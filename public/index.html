@@ -95,8 +95,13 @@
     .workspace .panel{overflow-x:auto}
     /* Cột email dài (chuỗi liền) được phép bẻ dòng để bảng tài khoản vừa khít. */
     .u-table td:first-child{overflow-wrap:anywhere}
-    /* Cột form bên trái bám dính khi cuộn danh sách dài (chỉ desktop). */
-    @media(min-width:921px){ .workspace .sticky-col{position:sticky;top:76px} }
+    /* Desktop 2 cột: form bám dính, bảng thu gọn padding để mọi nút thao tác vừa khít trong panel. */
+    @media(min-width:921px){
+      .workspace .sticky-col{position:sticky;top:76px}
+      .workspace .panel th,.workspace .panel td{padding-left:6px;padding-right:6px}
+      .workspace .panel td button.sm{padding-left:8px;padding-right:8px}
+      .workspace .panel td:last-child{display:flex;gap:5px;align-items:center;justify-content:flex-end;white-space:nowrap}
+    }
     /* Panel danh sách trong workspace: đầu panel dính để tiêu đề luôn thấy. */
     .list-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 6px}
     .list-head h2{margin:0}
@@ -678,7 +683,7 @@
         const cnt=document.getElementById('uCount');
         if(cnt){ cnt.textContent=rows.length; cnt.classList.toggle('hidden',!rows.length); }
         if(!rows.length){ box.innerHTML='<span class="muted">Chưa có tài khoản.</span>'; return; }
-        box.innerHTML=`<table><thead><tr><th>Email</th><th>Tên</th><th>Vai trò</th><th>Trạng thái</th><th></th></tr></thead><tbody>
+        box.innerHTML=`<table class="u-table"><thead><tr><th>Email</th><th>Tên</th><th>Vai trò</th><th>Trạng thái</th><th></th></tr></thead><tbody>
           ${rows.map(r=>`<tr>
             <td>${esc(r.email)}</td><td>${esc(r.name)}</td>
             <td>${ROLE_LABELS[r.role]||esc(r.role)}</td>
