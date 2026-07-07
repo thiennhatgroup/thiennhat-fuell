@@ -1,5 +1,5 @@
 // Service worker: PWA cài được + offline vỏ app (network-first) + Web Push (S7).
-const CACHE = 'tn-fuel-v3';
+const CACHE = 'tn-fuel-v4';
 const SHELL = [
   './',
   './index.html',

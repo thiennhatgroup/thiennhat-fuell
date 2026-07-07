@@ -89,8 +89,15 @@
     .nav button{background:var(--accent-soft);color:var(--accent);white-space:nowrap;min-height:38px;padding:6px 14px;border-radius:999px;border-color:transparent;box-shadow:none}
     .nav button.active{background:var(--accent);color:#fff}
     /* ---- Workspace 2-col (form + result) ---- */
-    .workspace{display:grid;grid-template-columns:minmax(300px,.85fr) minmax(340px,1.15fr);gap:16px;align-items:start}
-    .workspace>*{margin-bottom:0}
+    .workspace{display:grid;grid-template-columns:minmax(320px,.82fr) minmax(360px,1.18fr);gap:18px;align-items:start}
+    .workspace>*{margin-bottom:0;min-width:0}
+    /* Cột form bên trái bám dính khi cuộn danh sách dài (chỉ desktop). */
+    @media(min-width:921px){ .workspace .sticky-col{position:sticky;top:76px} }
+    /* Panel danh sách trong workspace: đầu panel dính để tiêu đề luôn thấy. */
+    .list-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 6px}
+    .list-head h2{margin:0}
+    .count-pill{background:var(--accent-soft);color:var(--accent);font-size:12px;font-weight:800;
+      padding:3px 10px;border-radius:999px;flex:0 0 auto}
     /* ---- Drawer ---- */
     .drawer{position:fixed;top:0;left:0;height:100dvh;width:288px;max-width:84vw;background:var(--panel);
       border-right:1px solid var(--line);transform:translateX(-100%);transition:transform .24s ease;z-index:60;
@@ -636,12 +643,13 @@
 
     // ---- Màn Tài khoản (Admin) — chạy thật ----
     async function renderUsers(el){
-      el.innerHTML=`<div class="workspace"><div class="panel">
+      el.innerHTML=`<div class="workspace"><div class="panel sticky-col">
         <h2>Tạo tài khoản</h2>
-        <div class="row">
-          <div><label>Email</label><input id="uEmail" type="email" placeholder="nguoidung@congty.com"></div>
-          <div><label>Tên</label><input id="uName" placeholder="Họ tên"></div>
-        </div>
+        <p class="muted" style="margin:-4px 0 14px">Cấp quyền truy cập cho nhân sự theo vai trò.</p>
+        <label>Email</label>
+        <input id="uEmail" type="email" placeholder="nguoidung@congty.com">
+        <label>Tên</label>
+        <input id="uName" placeholder="Họ tên">
         <div class="row">
           <div><label>Vai trò</label><select id="uRole">
             <option value="ThuKho">Thủ kho</option>
@@ -651,10 +659,10 @@
           </select></div>
           <div><label>Mã PIN (≥4 số)</label><input id="uPin" inputmode="numeric" placeholder="••••"></div>
         </div>
-        <div style="margin-top:12px"><button id="uCreate">Tạo tài khoản</button></div>
+        <div style="margin-top:16px"><button id="uCreate" style="width:100%">Tạo tài khoản</button></div>
         <div id="uMsg" class="msg"></div>
       </div>
-      <div class="panel"><h2>Danh sách tài khoản</h2><div id="uList" class="muted">${loadingText()}</div></div></div>`;
+      <div class="panel"><div class="list-head"><h2>Danh sách tài khoản</h2><span id="uCount" class="count-pill hidden"></span></div><div id="uList" class="muted">${loadingText()}</div></div></div>`;
       document.getElementById('uCreate').onclick=createUser;
       loadUsers();
     }
@@ -663,6 +671,8 @@
       try{
         const res=await call('rpc_admin_list_users');
         const rows=res.rows||[];
+        const cnt=document.getElementById('uCount');
+        if(cnt){ cnt.textContent=rows.length; cnt.classList.toggle('hidden',!rows.length); }
         if(!rows.length){ box.innerHTML='<span class="muted">Chưa có tài khoản.</span>'; return; }
         box.innerHTML=`<table><thead><tr><th>Email</th><th>Tên</th><th>Vai trò</th><th>Trạng thái</th><th></th></tr></thead><tbody>
           ${rows.map(r=>`<tr>
@@ -760,7 +770,7 @@
       const rows=state.catalog.tanks||[], oils=state.catalog.oilTypes||[];
       const e=(state.catEdit&&rows.find(r=>r.id===state.catEdit))||null;
       const oilOpts=`<option value="">— chọn loại dầu —</option>`+oils.map(o=>`<option value="${o.id}" ${e&&e.oilTypeId===o.id?'selected':''}>${esc(o.name)}</option>`).join('');
-      body.innerHTML=`<div class="panel"><h2>${e?'Sửa téc':'Thêm téc'}</h2>
+      body.innerHTML=`<div class="workspace"><div class="panel sticky-col"><h2>${e?'Sửa téc':'Thêm téc'}</h2>
         <div class="row">
           <div><label>Tên téc</label><input id="tName" value="${e?esc(e.name):''}" placeholder="Téc 1"></div>
           <div><label>Loại dầu</label><select id="tOil">${oilOpts}</select></div>
@@ -768,18 +778,21 @@
         <div class="row">
           <div><label>Sức chứa (lít)</label><input id="tCap" inputmode="decimal" value="${e?esc(e.capacity):''}"></div>
           <div><label>Reorder point (lít)</label><input id="tReorder" inputmode="decimal" value="${e?esc(e.reorderPoint):''}"></div>
-          <div><label>Lead-time (ngày)</label><input id="tLead" inputmode="numeric" value="${e?esc(e.leadTimeDays):''}"></div>
         </div>
-        <div class="row" style="margin-top:12px;flex:0">
+        <div class="row">
+          <div><label>Lead-time (ngày)</label><input id="tLead" inputmode="numeric" value="${e?esc(e.leadTimeDays):''}"></div>
+          <div></div>
+        </div>
+        <div class="actions">
           <button id="tSave" style="flex:0">${e?'Lưu':'Thêm'}</button>
           ${e?'<button class="ghost" id="tCancel" style="flex:0">Hủy</button>':''}
         </div><div id="tMsg" class="msg"></div></div>
-        <div class="panel"><h2>Danh sách téc</h2>${rows.length?`<table><thead><tr>
+        <div class="panel"><div class="list-head"><h2>Danh sách téc</h2>${rows.length?`<span class="count-pill">${rows.length}</span>`:''}</div>${rows.length?`<table><thead><tr>
           <th>Tên</th><th>Loại dầu</th><th>Sức chứa</th><th>Reorder</th><th>Lead-time</th><th>Trạng thái</th><th></th></tr></thead><tbody>
           ${rows.map(r=>`<tr><td>${esc(r.name)}</td><td>${esc(r.oilTypeName||'')}</td>
             <td>${fmtNum(r.capacity)}</td><td>${fmtNum(r.reorderPoint)}</td><td>${esc(r.leadTimeDays)}</td>
             <td>${statusCell(r.active)}</td><td style="white-space:nowrap">${rowActions('tank',r)}</td></tr>`).join('')}
-          </tbody></table>`:'<span class="muted">Chưa có téc.</span>'}</div>`;
+          </tbody></table>`:'<span class="muted">Chưa có téc.</span>'}</div></div>`;
       document.getElementById('tSave').onclick=()=>catSave('rpc_tank_upsert',{
         p_id:e?e.id:null, p_name:val('tName'), p_oil_type_id:val('tOil')||null,
         p_capacity:num(val('tCap')), p_reorder:num(val('tReorder')),
@@ -791,28 +804,27 @@
     function renderVehicleTab(body){
       const rows=state.catalog.vehicles||[];
       const e=(state.catEdit&&rows.find(r=>r.id===state.catEdit))||null;
-      body.innerHTML=`<div class="panel"><h2>${e?'Sửa xe':'Thêm xe'}</h2>
+      body.innerHTML=`<div class="workspace"><div class="panel sticky-col"><h2>${e?'Sửa xe':'Thêm xe'}</h2>
         <div class="row">
           <div><label>Biển số</label><input id="vPlate" value="${e?esc(e.plate):''}" placeholder="51C-123.45"></div>
           <div><label>Định mức bơm</label><input id="vNorm" inputmode="decimal" value="${e?esc(e.pumpNorm):''}"></div>
         </div>
-        <div class="row" style="margin-top:12px">
-          <div><label>Đơn vị</label><select id="vEntity">
-            ${['Thiên Nhật','Lâm Hải'].map(x=>`<option value="${x}" ${((e&&e.entity)||'Thiên Nhật')===x?'selected':''}>${x}</option>`).join('')}
-          </select></div>
-        </div>
+        <label>Đơn vị</label>
+        <select id="vEntity">
+          ${['Thiên Nhật','Lâm Hải'].map(x=>`<option value="${x}" ${((e&&e.entity)||'Thiên Nhật')===x?'selected':''}>${x}</option>`).join('')}
+        </select>
         <label style="display:flex;align-items:center;gap:8px;margin-top:12px">
           <input type="checkbox" id="vOdo" style="width:auto;min-height:auto" ${(!e||e.hasOdometer)?'checked':''}> Có công-tơ-mét (đồng hồ KM)</label>
-        <div class="row" style="margin-top:12px;flex:0">
+        <div class="actions">
           <button id="vSave" style="flex:0">${e?'Lưu':'Thêm'}</button>
           ${e?'<button class="ghost" id="vCancel" style="flex:0">Hủy</button>':''}
         </div><div id="vMsg" class="msg"></div></div>
-        <div class="panel"><h2>Danh sách xe</h2>${rows.length?`<table><thead><tr>
+        <div class="panel"><div class="list-head"><h2>Danh sách xe</h2>${rows.length?`<span class="count-pill">${rows.length}</span>`:''}</div>${rows.length?`<table><thead><tr>
           <th>Biển số</th><th>Đơn vị</th><th>Định mức bơm</th><th>Công-tơ-mét</th><th>Trạng thái</th><th></th></tr></thead><tbody>
           ${rows.map(r=>`<tr><td>${esc(r.plate)}</td><td>${esc(r.entity||'Thiên Nhật')}</td><td>${fmtNum(r.pumpNorm)}</td>
             <td>${r.hasOdometer?'Có':'Không'}</td><td>${statusCell(r.active)}</td>
             <td style="white-space:nowrap">${rowActions('vehicle',r)}</td></tr>`).join('')}
-          </tbody></table>`:'<span class="muted">Chưa có xe.</span>'}</div>`;
+          </tbody></table>`:'<span class="muted">Chưa có xe.</span>'}</div></div>`;
       document.getElementById('vSave').onclick=()=>catSave('rpc_vehicle_upsert',{
         p_id:e?e.id:null, p_plate:val('vPlate'), p_pump_norm:num(val('vNorm')),
         p_has_odometer:document.getElementById('vOdo').checked, p_active:e?e.active:true,
@@ -824,17 +836,17 @@
     function renderOilTypeTab(body){
       const rows=state.catalog.oilTypes||[];
       const e=(state.catEdit&&rows.find(r=>r.id===state.catEdit))||null;
-      body.innerHTML=`<div class="panel"><h2>${e?'Sửa loại dầu':'Thêm loại dầu'}</h2>
-        <div class="row"><div><label>Tên loại dầu</label><input id="oName" value="${e?esc(e.name):''}" placeholder="DO 0.05S"></div></div>
-        <div class="row" style="margin-top:12px;flex:0">
+      body.innerHTML=`<div class="workspace"><div class="panel sticky-col"><h2>${e?'Sửa loại dầu':'Thêm loại dầu'}</h2>
+        <label>Tên loại dầu</label><input id="oName" value="${e?esc(e.name):''}" placeholder="DO 0.05S">
+        <div class="actions">
           <button id="oSave" style="flex:0">${e?'Lưu':'Thêm'}</button>
           ${e?'<button class="ghost" id="oCancel" style="flex:0">Hủy</button>':''}
         </div><div id="oMsg" class="msg"></div></div>
-        <div class="panel"><h2>Danh sách loại dầu</h2>${rows.length?`<table><thead><tr>
+        <div class="panel"><div class="list-head"><h2>Danh sách loại dầu</h2>${rows.length?`<span class="count-pill">${rows.length}</span>`:''}</div>${rows.length?`<table><thead><tr>
           <th>Tên</th><th>Trạng thái</th><th></th></tr></thead><tbody>
           ${rows.map(r=>`<tr><td>${esc(r.name)}</td><td>${statusCell(r.active)}</td>
             <td style="white-space:nowrap">${rowActions('oilType',r)}</td></tr>`).join('')}
-          </tbody></table>`:'<span class="muted">Chưa có loại dầu.</span>'}</div>`;
+          </tbody></table>`:'<span class="muted">Chưa có loại dầu.</span>'}</div></div>`;
       document.getElementById('oSave').onclick=()=>catSave('rpc_oil_type_upsert',{
         p_id:e?e.id:null, p_name:val('oName'), p_active:e?e.active:true },'oMsg');
       wireEditToggle(body,'oilType');
@@ -844,21 +856,19 @@
     function renderSupplierTab(body){
       const rows=state.catalog.suppliers||[];
       const e=(state.catEdit&&rows.find(r=>r.id===state.catEdit))||null;
-      body.innerHTML=`<div class="panel"><h2>${e?'Sửa nhà cung cấp':'Thêm nhà cung cấp'}</h2>
-        <div class="row">
-          <div><label>Tên NCC</label><input id="sName" value="${e?esc(e.name):''}" placeholder="Cửa hàng xăng dầu…"></div>
-          <div><label>Điện thoại</label><input id="sPhone" value="${e&&e.phone?esc(e.phone):''}"></div>
-        </div>
+      body.innerHTML=`<div class="workspace"><div class="panel sticky-col"><h2>${e?'Sửa nhà cung cấp':'Thêm nhà cung cấp'}</h2>
+        <label>Tên NCC</label><input id="sName" value="${e?esc(e.name):''}" placeholder="Cửa hàng xăng dầu…">
+        <label>Điện thoại</label><input id="sPhone" value="${e&&e.phone?esc(e.phone):''}">
         <label>Ghi chú</label><input id="sNote" value="${e&&e.note?esc(e.note):''}">
-        <div class="row" style="margin-top:12px;flex:0">
+        <div class="actions">
           <button id="sSave" style="flex:0">${e?'Lưu':'Thêm'}</button>
           ${e?'<button class="ghost" id="sCancel" style="flex:0">Hủy</button>':''}
         </div><div id="sMsg" class="msg"></div></div>
-        <div class="panel"><h2>Danh sách nhà cung cấp</h2>${rows.length?`<table><thead><tr>
+        <div class="panel"><div class="list-head"><h2>Danh sách nhà cung cấp</h2>${rows.length?`<span class="count-pill">${rows.length}</span>`:''}</div>${rows.length?`<table><thead><tr>
           <th>Tên</th><th>Điện thoại</th><th>Ghi chú</th><th>Trạng thái</th><th></th></tr></thead><tbody>
           ${rows.map(r=>`<tr><td>${esc(r.name)}</td><td>${esc(r.phone||'')}</td><td>${esc(r.note||'')}</td>
             <td>${statusCell(r.active)}</td><td style="white-space:nowrap">${rowActions('supplier',r)}</td></tr>`).join('')}
-          </tbody></table>`:'<span class="muted">Chưa có nhà cung cấp.</span>'}</div>`;
+          </tbody></table>`:'<span class="muted">Chưa có nhà cung cấp.</span>'}</div></div>`;
       document.getElementById('sSave').onclick=()=>catSave('rpc_supplier_upsert',{
         p_id:e?e.id:null, p_name:val('sName'), p_phone:val('sPhone'), p_note:val('sNote'), p_active:e?e.active:true },'sMsg');
       wireEditToggle(body,'supplier');
@@ -868,19 +878,23 @@
     function renderTxnTypeTab(body){
       const rows=state.catalog.txnTypes||[];
       const e=(state.catEdit&&rows.find(r=>r.id===state.catEdit))||null;
-      body.innerHTML=`${e?`<div class="panel"><h2>Sửa loại giao dịch</h2>
-        <div class="row"><div><label>Tên hiển thị</label><input id="xName" value="${esc(e.name)}"></div></div>
-        <p class="muted">Mã: <b>${esc(e.code)}</b> · Bản chất: <b>${esc(e.kind)}</b> (cố định).</p>
-        <div class="row" style="margin-top:12px;flex:0">
-          <button id="xSave" style="flex:0">Lưu</button>
-          <button class="ghost" id="xCancel" style="flex:0">Hủy</button>
-        </div><div id="xMsg" class="msg"></div></div>`:''}
-        <div class="panel"><h2>Loại giao dịch</h2>
-        <p class="muted">Danh mục cố định (không thêm mới). Đổi tên hiển thị hoặc ngừng dùng.</p>
+      const leftPanel = e
+        ? `<div class="panel sticky-col"><h2>Sửa loại giao dịch</h2>
+            <label>Tên hiển thị</label><input id="xName" value="${esc(e.name)}">
+            <p class="muted" style="margin-top:10px">Mã: <b>${esc(e.code)}</b> · Bản chất: <b>${esc(e.kind)}</b> (cố định).</p>
+            <div class="actions">
+              <button id="xSave" style="flex:0">Lưu</button>
+              <button class="ghost" id="xCancel" style="flex:0">Hủy</button>
+            </div><div id="xMsg" class="msg"></div></div>`
+        : `<div class="panel sticky-col"><h2>Loại giao dịch</h2>
+            <p class="muted" style="margin:0 0 4px">Đây là danh mục cố định — không thêm mới được.</p>
+            <p class="muted" style="margin:0">Bạn chỉ có thể đổi <b>tên hiển thị</b> hoặc <b>ngừng dùng</b> một loại giao dịch. Bấm <b>Sửa</b> ở danh sách bên cạnh để đổi tên.</p></div>`;
+      body.innerHTML=`<div class="workspace">${leftPanel}
+        <div class="panel"><div class="list-head"><h2>Danh sách loại giao dịch</h2>${rows.length?`<span class="count-pill">${rows.length}</span>`:''}</div>
         ${rows.length?`<table><thead><tr><th>Tên</th><th>Mã</th><th>Bản chất</th><th>Trạng thái</th><th></th></tr></thead><tbody>
           ${rows.map(r=>`<tr><td>${esc(r.name)}</td><td>${esc(r.code)}</td><td>${esc(r.kind)}</td>
             <td>${statusCell(r.active)}</td><td style="white-space:nowrap">${rowActions('txnType',r)}</td></tr>`).join('')}
-          </tbody></table>`:'<span class="muted">Chưa có.</span>'}</div>`;
+          </tbody></table>`:'<span class="muted">Chưa có.</span>'}</div></div>`;
       if(e) document.getElementById('xSave').onclick=()=>catSave('rpc_txn_type_upsert',{
         p_id:e.id, p_name:val('xName'), p_active:e.active },'xMsg');
       wireEditToggle(body,'txnType');
@@ -2091,22 +2105,25 @@
     // ---- Báo cáo 3: Diesel chi tiết theo định mức (TIEU HAO DIESEL_1) ----
     function reportDetail(d){
       const rows=d.rows||[];
-      const head=`<tr><th>STT</th><th>Biển số xe</th><th>Định mức (L/100km)</th><th>Diesel từ téc</th>
-        <th>Bơm ngoài</th><th>Tổng diesel</th><th>KM</th><th>Tiêu hao thực</th><th>L/100km thực tế</th><th>Chênh lệch</th></tr>`;
+      const head=`<tr><th>STT</th><th>Biển số xe</th><th>Diesel từ téc</th><th>Bơm ngoài</th><th>Tổng diesel</th>
+        <th>KM (phiếu bơm)</th><th>Tiêu hao thực</th><th>Định mức bơm bom</th>
+        <th>L/km (phiếu bơm)</th><th>L/km tháng trước</th><th>Thay đổi L/km</th></tr>`;
       const groupTable=(sub)=>{
         const body=sub.length?sub.map((r,i)=>`<tr>
-          <td>${i+1}</td><td>${esc(r.plate)}</td><td>${r.dinhMuc?fmtL(r.dinhMuc):'—'}</td>
+          <td>${i+1}</td><td>${esc(r.plate)}</td>
           <td>${fmtL(r.dieselTec)}</td><td>${fmtL(r.bomNgoai)}</td><td style="font-weight:700">${fmtL(r.tongDiesel)}</td>
           <td>${fmtL(r.km)}</td><td style="font-weight:700">${fmtL(r.tieuHaoThuc)}</td>
-          <td>${r.lPer100==null?'—':fmtL(r.lPer100)}</td>
-          <td style="${r.chenhLech!=null&&Number(r.chenhLech)>0?'color:var(--danger)':''}">${r.chenhLech==null?'—':fmtL(r.chenhLech)}</td></tr>`).join('')
-          :`<tr><td colspan="10" class="muted">Không có dữ liệu trong kỳ này.</td></tr>`;
+          <td>${r.dinhMucBom==null?'—':fmtL(r.dinhMucBom)}</td>
+          <td>${r.lPerKm==null?'—':fmtL(r.lPerKm)}</td>
+          <td class="muted">${r.lPerKmPrev==null?'—':fmtL(r.lPerKmPrev)}</td>
+          <td style="${r.thayDoiLPerKm!=null&&Number(r.thayDoiLPerKm)>0?'color:var(--danger)':(r.thayDoiLPerKm!=null&&Number(r.thayDoiLPerKm)<0?'color:var(--ok)':'')}">${r.thayDoiLPerKm==null?'—':fmtL(r.thayDoiLPerKm)}</td></tr>`).join('')
+          :`<tr><td colspan="11" class="muted">Không có dữ liệu trong kỳ này.</td></tr>`;
         const foot=`<tr class="rpt-foot" style="font-weight:800">
-          <td>TỔNG</td><td></td><td></td><td>${fmtL(sumBy(sub,r=>r.dieselTec))}</td><td>${fmtL(sumBy(sub,r=>r.bomNgoai))}</td><td>${fmtL(sumBy(sub,r=>r.tongDiesel))}</td>
-          <td>${fmtL(sumBy(sub,r=>r.km))}</td><td>${fmtL(sumBy(sub,r=>r.tieuHaoThuc))}</td><td></td><td></td></tr>`;
+          <td>TỔNG</td><td></td><td>${fmtL(sumBy(sub,r=>r.dieselTec))}</td><td>${fmtL(sumBy(sub,r=>r.bomNgoai))}</td><td>${fmtL(sumBy(sub,r=>r.tongDiesel))}</td>
+          <td>${fmtL(sumBy(sub,r=>r.km))}</td><td>${fmtL(sumBy(sub,r=>r.tieuHaoThuc))}</td><td></td><td></td><td></td><td></td></tr>`;
         return `<table class="rpt-grid">${head}${body}${foot}</table>`;
       };
-      return { note:'So sánh L/100km thực tế với Định mức (đặt ở Danh mục & Xe). Chênh lệch > 0 (đỏ) = vượt định mức.',
+      return { note:'L/km (phiếu bơm) = Diesel từ téc ÷ KM theo phiếu bơm. "Định mức bơm bom" lấy từ Danh mục & Xe. Thay đổi L/km so tháng trước: đỏ = tăng, xanh = giảm. Các cột nhập tay (dầu tồn thủ kho, KM đồng hồ, số chuyến…) nằm trong bản Excel để kế toán điền.',
         table:entitySplit(rows, groupTable) };
     }
     function exportReportXlsx(){
@@ -2124,20 +2141,34 @@
         mapFoot=sub=>['','TỔNG',...days.map(()=>''),S(sub,'tongXuat'),S(sub,'bomNgoai'),S(sub,'tinhAm'),
           S(sub,'tinhDuong'),S(sub,'tieuHaoThuc'),S(sub,'km'),'','','',''];
       } else if(kind==='detail'){
-        // Bám sát sheet TIEU HAO DIESEL_1: thêm cột nhập tay để kế toán điền sau khi export.
+        // Bám SÁT nguyên layout sheet gốc TIEU HAO DIESEL_1 (cột A→T). Cột suy ra
+        // được thì tự điền; cột nhập tay (dầu tồn thủ kho, KM đồng hồ, số chuyến,
+        // bơm bom, tỷ lệ theo đồng hồ, ghi chú) để trống cho kế toán điền.
         baseTitle='TIÊU HAO DIESEL CHI TIẾT'; sheetBase='Diesel chi tiet';
-        header=['STT','Biển số xe','Dầu tồn đầu kỳ (thủ kho)','Dầu tồn cuối kỳ (thủ kho)',
-          'Định mức (L/100km)','Diesel từ téc','Bơm ngoài','Tổng diesel',
+        header=['Stt','Biển số xe',
+          'Dầu tồn đầu kỳ (thủ kho nhập)','Dầu tồn cuối kỳ (thủ kho nhập)',
+          'Tổng nhập / tiêu hao sau tịnh','KL tiêu hao thực tế',
           'KM theo phiếu bơm','KM đầu tháng (đồng hồ)','KM cuối tháng (đồng hồ)','KM theo đồng hồ','Đồng hồ − phiếu bơm',
-          'Bơm bom','Số chuyến','Định mức bơm bom','Bơm đầu xe',
-          'Tiêu hao thực','L/100km thực tế','Chênh lệch','Ghi chú'];
-        mapRow=(r,i)=>[i+1,r.plate,'','',
-          r.dinhMuc==null?'':N(r.dinhMuc),N(r.dieselTec),N(r.bomNgoai),N(r.tongDiesel),
-          N(r.km),'','','','',
-          '','','','',
-          N(r.tieuHaoThuc),r.lPer100==null?'':N(r.lPer100),r.chenhLech==null?'':N(r.chenhLech),''];
-        mapFoot=sub=>['','TỔNG','','','',S(sub,'dieselTec'),S(sub,'bomNgoai'),S(sub,'tongDiesel'),
-          S(sub,'km'),'','','','','','','','',S(sub,'tieuHaoThuc'),'','',''];
+          'Bơm bom','Số chuyến (thủ kho nhập)','Định mức bơm bom','Bơm đầu xe',
+          'Tỷ lệ tiêu hao theo phiếu bơm (L/km)','Tỷ lệ tiêu hao theo đồng hồ (L/km)',
+          'L/km tháng này','Thay đổi L/km vs tháng trước','Ghi chú'];
+        mapRow=(r,i)=>[i+1,r.plate,
+          '','',                                  // C,D dầu tồn thủ kho — nhập tay
+          N(r.tieuHaoThuc),                       // E tổng nhập/tiêu hao sau tịnh
+          '',                                     // F = C+E−D — nhập tay
+          N(r.km),                                // G KM theo phiếu bơm
+          '','',                                  // H,I KM đồng hồ đầu/cuối — nhập tay
+          '','',                                  // J,K = I−H, J−G — nhập tay
+          '','',                                  // L,M bơm bom, số chuyến — nhập tay
+          r.dinhMucBom==null?'':N(r.dinhMucBom),  // N định mức bơm bom
+          N(r.dieselTec),                         // O bơm đầu xe (diesel xuất nội bộ từ téc)
+          r.lPerKm==null?'':N(r.lPerKm),          // P tỷ lệ theo phiếu bơm = O/G
+          '',                                     // Q theo đồng hồ (cần J) — nhập tay
+          r.lPerKm==null?'':N(r.lPerKm),          // R L/km tháng này = O/G
+          r.thayDoiLPerKm==null?'':N(r.thayDoiLPerKm), // S thay đổi vs tháng trước
+          ''];                                    // T ghi chú
+        mapFoot=sub=>['','TỔNG','','',S(sub,'tieuHaoThuc'),'',S(sub,'km'),
+          '','','','','','','',S(sub,'dieselTec'),'','','','',''];
       } else {
         const tanks=d.tanks||[], oils=d.oils||[];
         baseTitle='TỔNG HỢP TIÊU HAO'; sheetBase='Tong hop';
