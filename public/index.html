@@ -741,26 +741,41 @@
       const sel=(id,v)=>v&&v===id?'selected':'';
       const opt=(arr,idKey,labelKey,cur)=>arr.map(x=>`<option value="${x[idKey]}" ${sel(x[idKey],cur)}>${esc(x[labelKey])}</option>`).join('');
       const curKind = e ? e.txnKind : (txns[0]&&txns[0].kind);
+      const today = new Date().toISOString().slice(0,10);
+      const eDate = (e && e.entryDate) ? e.entryDate : today;
       el.innerHTML=`<div class="panel"><h2>${e?`Sửa phiếu ${e.code?esc(e.code):'nháp'}`:'Phiếu bơm mới'}</h2>
         <div class="row">
-          <div><label>Xe</label><select id="pVeh"><option value="">— chọn xe —</option>${opt(veh,'id','plate',e&&e.vehicleId)}</select></div>
-          <div><label>Loại giao dịch</label><select id="pTxn">${txns.map(t=>`<option value="${t.id}" data-kind="${t.kind}" ${sel(t.id,e&&e.txnTypeId)}>${esc(t.name)}</option>`).join('')}</select></div>
+          <div><label>Ngày bơm <span class="rq">*</span></label><input id="pDate" class="req" type="date" value="${esc(eDate)}">
+            <div class="fnote">Ngày thực tế bơm dầu. Mặc định hôm nay — chỉ đổi nếu nhập bù cho ngày khác.</div></div>
+          <div><label>Xe <span class="rq">*</span></label><select id="pVeh" class="req"><option value="">— chọn xe —</option>${opt(veh,'id','plate',e&&e.vehicleId)}</select>
+            <div class="fnote">Chọn xe được bơm. Hệ thống tự lấy KM cũ của xe này.</div></div>
         </div>
         <div class="row">
-          <div id="pTankWrap"><label>Téc</label><select id="pTank"><option value="">— chọn téc —</option>${opt(tanks,'id','name',e&&e.tankId)}</select></div>
-          <div><label>Loại dầu</label><select id="pOil"><option value="">— chọn loại dầu —</option>${opt(oils,'id','name',e&&e.oilTypeId)}</select></div>
+          <div><label>Loại giao dịch <span class="rq">*</span></label><select id="pTxn" class="req">${txns.map(t=>`<option value="${t.id}" data-kind="${t.kind}" ${sel(t.id,e&&e.txnTypeId)}>${esc(t.name)}</option>`).join('')}</select>
+            <div class="fnote">Bơm cho xe (trừ tồn téc) hay Bơm ngoài (mua ngoài, không trừ tồn).</div></div>
         </div>
         <div class="row">
-          <div><label>Số lít</label><input id="pLit" inputmode="decimal" value="${e?esc(e.liters):''}"></div>
+          <div id="pTankWrap"><label>Téc <span class="rq">*</span></label><select id="pTank" class="req"><option value="">— chọn téc —</option>${opt(tanks,'id','name',e&&e.tankId)}</select>
+            <div class="fnote">Téc lấy dầu ra để bơm. Bỏ trống khi Bơm ngoài.</div></div>
+          <div><label>Loại dầu <span class="rq">*</span></label><select id="pOil" class="req"><option value="">— chọn loại dầu —</option>${opt(oils,'id','name',e&&e.oilTypeId)}</select>
+            <div class="fnote">Loại dầu bơm (thường trùng loại dầu của téc đã chọn).</div></div>
+        </div>
+        <div class="row">
+          <div><label>Số lít <span class="rq">*</span></label><input id="pLit" class="req" inputmode="decimal" value="${e?esc(e.liters):''}">
+            <div class="fnote">Số lít đã bơm theo đồng hồ bơm. Nhập số dương.</div></div>
           <div id="pKmWrap" class="row" style="flex:2;margin:0">
             <div><label>KM cũ (tự động)</label><input id="pKmOld" inputmode="decimal" readonly
-              style="background:var(--bg);color:var(--muted)" value="${e&&e.kmOld!=null?esc(e.kmOld):''}"></div>
-            <div><label>KM mới</label><input id="pKmNew" inputmode="decimal" value="${e&&e.kmNew!=null?esc(e.kmNew):''}"></div>
+              style="background:var(--bg);color:var(--muted)" value="${e&&e.kmOld!=null?esc(e.kmOld):''}">
+              <div class="fnote">Chỉ số công-tơ-mét lần bơm trước — hệ thống tự điền.</div></div>
+            <div><label>KM mới</label><input id="pKmNew" inputmode="decimal" value="${e&&e.kmNew!=null?esc(e.kmNew):''}">
+              <div class="fnote">Chỉ số công-tơ-mét hiện tại. Bắt buộc khi xe có công-tơ-mét.</div></div>
           </div>
         </div>
         <div id="pKmHint" class="muted" style="font-size:13px;min-height:18px"></div>
-        <div id="pSupWrap"><label>Nhà cung cấp (bơm ngoài)</label><select id="pSup"><option value="">—</option>${opt(sups,'id','name',e&&e.supplierId)}</select></div>
+        <div id="pSupWrap"><label>Nhà cung cấp (bơm ngoài) <span class="rq">*</span></label><select id="pSup" class="req"><option value="">—</option>${opt(sups,'id','name',e&&e.supplierId)}</select>
+          <div class="fnote">Nơi mua dầu khi Bơm ngoài. Chỉ hiện khi chọn loại Bơm ngoài.</div></div>
         <label>Ghi chú</label><input id="pNote" value="${e&&e.note?esc(e.note):''}">
+        <div class="fnote">Không bắt buộc. Ghi thêm thông tin bất thường của lần bơm.</div>
         <div class="row" style="margin-top:12px;flex:0">
           <button id="pSave" style="flex:0">${e?'Lưu':'Thêm phiếu'}</button>
           ${e?'<button class="ghost" id="pCancel" style="flex:0">Hủy</button>':''}
@@ -869,7 +884,7 @@
       const p={ p_vehicle_id:val('pVeh')||null, p_txn_type_id:val('pTxn')||null, p_oil_type_id:val('pOil')||null,
         p_liters:num(val('pLit')), p_tank_id: kind==='bom_ngoai'?null:(val('pTank')||null),
         p_km_new:val('pKmNew')?num(val('pKmNew')):null, p_km_old:val('pKmOld')?num(val('pKmOld')):null,
-        p_supplier_id: kind==='bom_ngoai'?(val('pSup')||null):null, p_note:val('pNote') };
+        p_supplier_id: kind==='bom_ngoai'?(val('pSup')||null):null, p_entry_date:val('pDate')||null, p_note:val('pNote') };
       if(e) p.p_id=e.id;
       return p;
     }
@@ -1009,22 +1024,36 @@
       const tanks=a.tanks||[], oils=a.oilTypes||[], sups=a.suppliers||[];
       const sel=(id,v)=>v&&v===id?'selected':'';
       const opt=(arr,idKey,labelKey,cur)=>arr.map(x=>`<option value="${x[idKey]}" ${sel(x[idKey],cur)}>${esc(x[labelKey])}</option>`).join('');
+      const today = new Date().toISOString().slice(0,10);
+      const eDate = (e && e.entryDate) ? e.entryDate : today;
       el.innerHTML=`<div class="panel"><h2>${e?`Sửa phiếu ${e.code?esc(e.code):'nháp'}`:'Phiếu nhập mới'}</h2>
         <div class="row">
-          <div><label>Nhà cung cấp</label><select id="nSup"><option value="">— chọn NCC —</option>${opt(sups,'id','name',e&&e.supplierId)}</select></div>
-          <div><label>Téc nhận</label><select id="nTank"><option value="">— chọn téc —</option>${opt(tanks,'id','name',e&&e.tankId)}</select></div>
+          <div><label>Ngày nhập <span class="rq">*</span></label><input id="nDate" class="req" type="date" value="${esc(eDate)}">
+            <div class="fnote">Ngày dầu về téc. Mặc định hôm nay — chỉ đổi nếu nhập bù cho ngày khác.</div></div>
+          <div><label>Nhà cung cấp <span class="rq">*</span></label><select id="nSup" class="req"><option value="">— chọn NCC —</option>${opt(sups,'id','name',e&&e.supplierId)}</select>
+            <div class="fnote">Đơn vị bán/giao lô dầu này.</div></div>
         </div>
         <div class="row">
-          <div><label>Loại dầu</label><select id="nOil"><option value="">— chọn loại dầu —</option>${opt(oils,'id','name',e&&e.oilTypeId)}</select></div>
-          <div><label>Số HĐ NCC</label><input id="nInv" value="${e&&e.supplierInvoiceNo?esc(e.supplierInvoiceNo):''}" placeholder="Số hóa đơn nhà cung cấp"></div>
+          <div><label>Téc nhận <span class="rq">*</span></label><select id="nTank" class="req"><option value="">— chọn téc —</option>${opt(tanks,'id','name',e&&e.tankId)}</select>
+            <div class="fnote">Téc chứa lô dầu nhập về. Chọn téc sẽ gợi ý loại dầu của téc.</div></div>
+          <div><label>Loại dầu <span class="rq">*</span></label><select id="nOil" class="req"><option value="">— chọn loại dầu —</option>${opt(oils,'id','name',e&&e.oilTypeId)}</select>
+            <div class="fnote">Loại dầu của lô nhập (thường trùng loại dầu của téc nhận).</div></div>
         </div>
         <div class="row">
-          <div><label>Số lít</label><input id="nLit" inputmode="decimal" value="${e?esc(e.liters):''}"></div>
-          <div><label>Đơn giá</label><input id="nPrice" inputmode="decimal" value="${e&&e.unitPrice!=null?esc(e.unitPrice):''}"></div>
+          <div><label>Số lít <span class="rq">*</span></label><input id="nLit" class="req" inputmode="decimal" value="${e?esc(e.liters):''}">
+            <div class="fnote">Số lít thực nhận theo phiếu nhập kho. Nhập số dương.</div></div>
+          <div><label>Đơn giá</label><input id="nPrice" inputmode="decimal" value="${e&&e.unitPrice!=null?esc(e.unitPrice):''}">
+            <div class="fnote">Giá 1 lít (đồng). Để trống nếu chưa có giá.</div></div>
+        </div>
+        <div class="row">
           <div><label>Thành tiền (tự tính)</label><input id="nAmount" readonly
-            style="background:var(--bg);color:var(--muted)" value="${e&&e.amount!=null?fmtNum(e.amount):''}"></div>
+            style="background:var(--bg);color:var(--muted)" value="${e&&e.amount!=null?fmtNum(e.amount):''}">
+            <div class="fnote">Số lít × đơn giá — hệ thống tự tính, không sửa tay.</div></div>
+          <div><label>Số HĐ NCC</label><input id="nInv" value="${e&&e.supplierInvoiceNo?esc(e.supplierInvoiceNo):''}" placeholder="Số hóa đơn nhà cung cấp">
+            <div class="fnote">Số hóa đơn của nhà cung cấp (khác Số phiếu hệ thống tự cấp).</div></div>
         </div>
         <label>Ghi chú</label><input id="nNote" value="${e&&e.note?esc(e.note):''}">
+        <div class="fnote">Không bắt buộc. Ghi thêm thông tin bất thường của lô nhập.</div>
         <div class="row" style="margin-top:12px;flex:0">
           <button id="nSave" style="flex:0">${e?'Lưu':'Thêm phiếu'}</button>
           ${e?'<button class="ghost" id="nCancel" style="flex:0">Hủy</button>':''}
@@ -1098,7 +1127,7 @@
     function nhapParams(e){
       const p={ p_supplier_id:val('nSup')||null, p_tank_id:val('nTank')||null, p_oil_type_id:val('nOil')||null,
         p_liters:num(val('nLit')), p_unit_price:num(val('nPrice')),
-        p_supplier_invoice_no:val('nInv'), p_note:val('nNote') };
+        p_supplier_invoice_no:val('nInv'), p_entry_date:val('nDate')||null, p_note:val('nNote') };
       if(e) p.p_id=e.id;
       return p;
     }
