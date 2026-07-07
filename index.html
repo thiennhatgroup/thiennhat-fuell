@@ -145,6 +145,29 @@
     .loading-line{display:flex;gap:8px;align-items:center;color:var(--muted)}
     .spin{width:16px;height:16px;border-radius:50%;border:2px solid var(--line);border-top-color:var(--accent);animation:spin .8s linear infinite}
     @keyframes spin{to{transform:rotate(360deg)}}
+    /* Chuyển màn mượt hơn: nội dung hiện dần khi đổi màn (không chạy khi chỉ làm mới dữ liệu). */
+    @keyframes screenIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+    #screen.nav-in{animation:screenIn .18s ease}
+    @media(prefers-reduced-motion:reduce){ #screen.nav-in{animation:none} }
+    /* Tồn kho: thẻ trực quan + biểu đồ mức đầy theo téc */
+    .stat-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:10px}
+    .stat{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+    .stat .k{font-size:12px;color:var(--muted)}
+    .stat .v{font-size:20px;font-weight:800;margin-top:2px}
+    .inv-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin-top:10px}
+    .inv-card{border:1px solid var(--line);border-radius:14px;padding:14px;background:var(--panel)}
+    .inv-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+    .inv-tank{font-weight:800;font-size:16px}
+    .inv-oil{font-size:12px;margin-top:1px}
+    .inv-pct{font-weight:800;font-size:18px;white-space:nowrap}
+    .inv-track{height:14px;border-radius:999px;background:var(--line);overflow:hidden;margin:10px 0 8px}
+    .inv-fill{height:100%;border-radius:999px;transition:width .4s ease}
+    .inv-nums{font-size:14px}
+    .inv-chips{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+    .inv-chips .chip{background:var(--bg,#f6f8fb);border:1px solid var(--line);border-radius:10px;padding:8px 10px;display:flex;flex-direction:column;gap:2px}
+    .inv-chips .chip .muted{font-size:11px}
+    .inv-chips .chip b{font-size:15px}
+    @media(max-width:520px){ .inv-chips{grid-template-columns:1fr 1fr} }
     .toast{position:fixed;left:50%;bottom:80px;transform:translateX(-50%) translateY(12px);background:#1E2A38;color:#fff;
       padding:12px 18px;border-radius:12px;opacity:0;transition:.18s ease;z-index:70;max-width:90%;font-weight:700;box-shadow:0 8px 24px rgba(0,0,0,.18)}
     .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
@@ -260,9 +283,10 @@
     // [id, nhãn, quyền cần có, slice] — server VẪN chốt quyền qua require_permission().
     const SCREENS = [
       ['home',      'Trang chủ',        null,             ''],
-      ['pump',      'Nhập bơm',         'pump:create',    'S2'],
+      ['guide',     'Hướng dẫn sử dụng',null,             ''],
+      ['pump',      'Bơm dầu',          'pump:create',    'S2'],
       ['review',    'Đối chiếu phiếu',  'ledger:flag',    'S2'],
-      ['nhap',      'Phiếu nhập',       'pump:create',    'S4'],
+      ['nhap',      'Nhập dầu',         'pump:create',    'S4'],
       ['nhapReview','Đối chiếu nhập',   'pump:review',    'S4'],
       ['inventory', 'Tồn kho',          'inventory:read', 'S5'],
       ['adjust',    'Tịnh téc / Kiểm kê','adjust:manage',  'S6'],
@@ -284,10 +308,10 @@
       Admin:        ['home','pump','nhap','inventory','adjust','report','review','adminLedger','catalog','users']
     };
     // Màn vẫn truy cập được (qua chuông/deep-link) nhưng KHÔNG hiện trong menu drawer/tab.
-    const MENU_HIDDEN = ['nhapReview','alerts'];
+    const MENU_HIDDEN = ['nhapReview','alerts','guide'];
     // Nhóm màn trong drawer: 'admin' = Quản trị, còn lại = Nghiệp vụ ('home' đứng riêng trên cùng).
     const ADMIN_SCREENS = ['catalog','users'];
-    const TAB_LABEL = { home:'Trang chủ', pump:'Nhập bơm', review:'Đối chiếu', nhap:'Phiếu nhập', nhapReview:'Đối chiếu N', inventory:'Tồn kho', adjust:'Tịnh téc', alerts:'Cảnh báo', report:'Báo cáo', adminLedger:'Sửa phiếu', catalog:'Danh mục', users:'Tài khoản' };
+    const TAB_LABEL = { home:'Trang chủ', guide:'Hướng dẫn', pump:'Bơm dầu', review:'Đối chiếu', nhap:'Nhập dầu', nhapReview:'Đối chiếu N', inventory:'Tồn kho', adjust:'Tịnh téc', alerts:'Cảnh báo', report:'Báo cáo', adminLedger:'Sửa phiếu', catalog:'Danh mục', users:'Tài khoản' };
     function orderScreensForRole(list){
       const pref = ROLE_MENU_ORDER[state.user && state.user.role] || [];
       return [...list].sort((a,b)=>{ const ia=pref.indexOf(a[0]), ib=pref.indexOf(b[0]); return (ia<0?999:ia)-(ib<0?999:ib); });
@@ -412,15 +436,20 @@
     function closeDrawer(){ document.getElementById('drawer').classList.remove('open'); document.getElementById('drawerBackdrop').classList.add('hidden'); }
     function toggleGroup(el){ el.closest('.drawer-group').classList.toggle('collapsed'); }
 
+    // Chạy lại hiệu ứng hiện dần cho khung nội dung khi ĐỔI màn (giúp cảm giác mượt).
+    function playScreenIn(){
+      const el=document.getElementById('screen'); if(!el) return;
+      el.classList.remove('nav-in'); void el.offsetWidth; el.classList.add('nav-in');
+    }
     function navTo(id){
       closeDrawer(); closeNotif();
       if(id!==state.screen){ try{ history.pushState({screen:id},'','#'+id); }catch(_){} state.histDepth=(state.histDepth||0)+1; }
-      state.screen=id; renderNav(); renderScreen(); updateBackFab();
+      state.screen=id; renderNav(); renderScreen(); playScreenIn(); updateBackFab();
     }
     window.addEventListener('popstate', e=>{
       const s=e.state&&e.state.screen; if(!s) return;
       state.histDepth=Math.max(0,(state.histDepth||0)-1);
-      state.screen=s; renderNav(); renderScreen(); updateBackFab();
+      state.screen=s; renderNav(); renderScreen(); playScreenIn(); updateBackFab();
     });
     function updateBackFab(){ const b=document.getElementById('backFab'); if(b) b.classList.toggle('show',(state.histDepth||0)>0); }
     // Bấm push (S7) khi app đang mở → service worker báo chuyển màn Cảnh báo.
@@ -456,6 +485,7 @@
       const el=document.getElementById('screen');
       const scr=SCREENS.find(s=>s[0]===state.screen);
       if(state.screen==='home') return renderHome(el);
+      if(state.screen==='guide') return renderGuide(el);
       if(state.screen==='users') return renderUsers(el);
       if(state.screen==='catalog') return renderCatalog(el);
       if(state.screen==='pump') return renderPump(el);
@@ -473,17 +503,116 @@
         <p class="muted">Màn hình này sẽ được xây ở lát <b>${scr[3]}</b> theo lộ trình (xem docs/issues).</p></div>`;
     }
 
+    // Việc chính theo từng vai trò — dùng chung cho Trang chủ và trang Hướng dẫn sử dụng.
+    const ROLE_GUIDE = {
+      ThuKho: {
+        intro:'Bạn phụ trách ghi nhận lượng dầu bơm ra cho xe và lượng dầu nhập về téc mỗi ngày, luôn kèm ảnh chứng từ để bộ phận sau đối chiếu.',
+        tasks:[
+          ['Bơm dầu','Ghi lại từng lần bơm dầu cho xe của công ty hoặc bơm bán ra ngoài. Chọn xe, chọn téc lấy dầu, nhập số lít và ngày, sau đó chụp ảnh đồng hồ bơm và ảnh công-tơ-mét của xe. Bấm Lưu phiếu để lưu phiếu kèm ảnh.'],
+          ['Nhập dầu','Ghi lại từng lần nhận dầu từ nhà cung cấp về téc. Chọn nhà cung cấp, chọn téc, nhập số lít thực nhận và số hóa đơn, kèm ảnh biên bản giao nhận và ảnh phiếu nhập kho.'],
+          ['Tồn kho','Xem nhanh lượng dầu còn lại trong từng téc so với sức chứa, mức tiêu hao trung bình mỗi ngày và số ngày tồn còn lại.'],
+        ]
+      },
+      TruongBoPhan: {
+        intro:'Bạn theo dõi tồn kho, đối chiếu các phiếu do thủ kho tạo, thực hiện tịnh téc và kiểm kê, và xem báo cáo tiêu hao hằng tháng.',
+        tasks:[
+          ['Tồn kho','Theo dõi mức tồn của từng téc theo thời gian thực và các cảnh báo cần đặt hàng.'],
+          ['Tịnh téc và kiểm kê','Đặt lại tồn dầu gốc, ghi tịnh téc khi téc cạn, và ghi kiểm kê giữa chừng kèm biên bản xác nhận.'],
+          ['Đối chiếu phiếu','Xem lại các phiếu bơm và phiếu nhập, đánh dấu lệch nếu có sai khác để người tạo sửa lại.'],
+          ['Báo cáo tháng','Xem báo cáo tiêu hao tổng hợp và chi tiết theo từng xe, từng ngày.'],
+        ]
+      },
+      KeToan: {
+        intro:'Bạn phụ trách số liệu tồn kho, đối chiếu chứng từ, tịnh téc và kiểm kê, cùng các báo cáo tiêu hao phục vụ kế toán.',
+        tasks:[
+          ['Tồn kho','Theo dõi mức tồn, tiêu hao trung bình và các cảnh báo đặt hàng của từng téc.'],
+          ['Tịnh téc và kiểm kê','Đặt lại tồn dầu gốc, ghi tịnh téc và ghi kiểm kê kèm biên bản xác nhận, có lưu người kiểm kê và thời điểm.'],
+          ['Đối chiếu phiếu','Kiểm tra các phiếu bơm và phiếu nhập, đánh dấu lệch khi cần sửa lại.'],
+          ['Báo cáo tháng','Xuất và xem báo cáo tiêu hao tổng hợp cùng bảng chi tiết theo định mức.'],
+        ]
+      },
+      Admin: {
+        intro:'Bạn có toàn quyền quản trị hệ thống: mọi nghiệp vụ, sửa hoặc xóa phiếu đã duyệt, quản lý danh mục và tài khoản người dùng.',
+        tasks:[
+          ['Toàn bộ nghiệp vụ','Truy cập tất cả chức năng của thủ kho, trưởng bộ phận và kế toán.'],
+          ['Sửa phiếu','Sửa hoặc xóa trực tiếp phiếu đã duyệt khi cần chỉnh sai sót; mọi thay đổi đều được ghi lại vào lịch sử.'],
+          ['Danh mục và Xe','Quản lý danh sách téc, loại dầu, xe, nhà cung cấp và các định mức.'],
+          ['Tài khoản','Tạo tài khoản, đặt lại mã PIN và phân vai trò cho người dùng.'],
+        ]
+      }
+    };
     function renderHome(el){
-      const items=visibleScreens().filter(s=>s[0]!=='home');
+      const items=visibleScreens().filter(s=>s[0]!=='home'&&s[0]!=='guide');
+      const g=ROLE_GUIDE[state.user.role];
+      const guideBlock = g ? `<div class="panel">
+        <h2 style="margin:0 0 4px">Việc chính của bạn</h2>
+        <p class="muted" style="margin:0 0 10px">${esc(g.intro)}</p>
+        ${g.tasks.map(t=>`<div style="padding:8px 0;border-top:1px solid var(--line)">
+          <b>${esc(t[0])}</b><div class="muted" style="margin-top:2px">${esc(t[1])}</div></div>`).join('')}
+        <div style="margin-top:12px"><button data-go="guide" style="flex:0">Xem hướng dẫn sử dụng đầy đủ</button></div>
+      </div>` : '';
       el.innerHTML=`<div class="panel">
         <h2>Xin chào, ${esc(state.user.name)}</h2>
         <p class="muted">Vai trò: <b>${ROLE_LABELS[state.user.role]||state.user.role}</b>. Chọn chức năng bên dưới.</p>
         <div class="row" style="margin-top:8px">
-          ${items.map(s=>`<button class="ghost" data-go="${s[0]}">${esc(s[1])}${s[3]?` <span class="muted">(${s[3]})</span>`:''}</button>`).join('')}
+          ${items.map(s=>`<button class="ghost" data-go="${s[0]}">${esc(s[1])}</button>`).join('')}
         </div>
       </div>
-      <div class="panel"><b>Hệ thống tồn kho xăng dầu.</b>
-        <p class="muted">Đăng nhập email+PIN, phân quyền theo vai trò (Thủ kho / Trưởng bộ phận / Kế toán tổng hợp / Admin). Chọn chức năng theo quyền của bạn ở trên.</p></div>`;
+      ${guideBlock}`;
+      el.querySelectorAll('[data-go]').forEach(b=> b.onclick=()=>navTo(b.dataset.go));
+    }
+
+    // ---- Trang Hướng dẫn sử dụng (mọi vai trò đều xem được) ----
+    // Mô tả đầy đủ từng chức năng cùng các quy tắc bảo vệ và trường hợp ngoại lệ.
+    const GUIDE_FEATURES = [
+      ['Bơm dầu','Dùng để ghi lại mỗi lần bơm dầu ra khỏi téc: bơm cho xe của công ty hoặc bơm bán cho khách bên ngoài. Với mỗi phiếu, người tạo chọn loại giao dịch, chọn xe, chọn téc lấy dầu, nhập số lít và ngày thực hiện, rồi đính kèm ảnh đồng hồ bơm và ảnh công-tơ-mét. Phiếu bơm cho xe của công ty sẽ trừ vào tồn của téc; phiếu bơm bán ra ngoài không trừ tồn téc.'],
+      ['Nhập dầu','Dùng để ghi lại mỗi lần nhận dầu từ nhà cung cấp về téc. Người tạo chọn nhà cung cấp, chọn téc chứa, nhập số lít thực nhận và số hóa đơn, đính kèm ảnh biên bản giao nhận và ảnh phiếu nhập kho. Sau khi duyệt, số lít này được cộng vào tồn của téc.'],
+      ['Tồn kho','Hiển thị mức tồn của từng téc theo thời gian thực. Phần đầu là các con số tổng hợp của toàn kho. Tiếp theo là thẻ trực quan của từng téc với thanh màu thể hiện lượng dầu hiện có so với sức chứa, kèm tiêu hao trung bình mỗi ngày và số ngày tồn còn lại. Cuối cùng là bảng số liệu chi tiết đầy đủ.'],
+      ['Tịnh téc và kiểm kê','Gồm ba việc. Đặt tồn dầu gốc là ghi một lần con số đo tay tại thời điểm bắt đầu theo dõi một téc. Tịnh téc dùng khi téc cạn, ghi lại tồn thực tế trong khoảng từ ngày bắt đầu đến ngày chốt để hệ thống tính chênh lệch và phân bổ cho các xe. Kiểm kê dùng khi kiểm tra giữa chừng, ghi lại tồn thực tế kèm người kiểm kê, thời điểm và ảnh biên bản xác nhận.'],
+      ['Đối chiếu phiếu','Người có quyền đối chiếu xem lại các phiếu bơm và phiếu nhập, so sánh với ảnh chứng từ. Nếu phát hiện sai khác, đánh dấu phiếu là lệch kèm lý do để người tạo sửa lại; nếu đúng thì duyệt phiếu để đưa vào tồn kho.'],
+      ['Báo cáo tháng','Tổng hợp lượng tiêu hao theo tháng: bảng tổng hợp toàn bộ, bảng diesel theo từng ngày và bảng chi tiết theo định mức của từng xe. Có thể xuất ra tệp bảng tính để lưu trữ.'],
+      ['Danh mục và Xe','Quản lý các danh sách nền của hệ thống: téc chứa, loại dầu, xe, nhà cung cấp và các định mức như thời gian chờ nhà cung cấp. Đây là nơi khai báo dữ liệu trước khi bắt đầu ghi phiếu.'],
+      ['Sửa phiếu','Chỉ dành cho Admin. Cho phép sửa hoặc xóa trực tiếp một phiếu kể cả khi đã duyệt, phục vụ việc chỉnh sửa sai sót. Mọi thao tác đều được ghi lại vào lịch sử để tra cứu về sau.'],
+      ['Tài khoản','Chỉ dành cho Admin. Tạo tài khoản mới, phân vai trò, đặt lại mã PIN và khóa hoặc mở tài khoản người dùng.'],
+    ];
+    const GUIDE_RULES = [
+      ['Phiếu phải được duyệt mới ảnh hưởng tồn kho','Một phiếu bơm hoặc phiếu nhập chỉ thực sự cộng hoặc trừ vào tồn của téc sau khi được duyệt. Phiếu còn ở trạng thái nháp hoặc chờ đối chiếu chưa làm thay đổi tồn kho.'],
+      ['Bắt buộc có ảnh chứng từ','Phiếu bơm cần ảnh đồng hồ bơm và ảnh công-tơ-mét. Phiếu nhập cần ảnh biên bản giao nhận và ảnh phiếu nhập kho. Đây là căn cứ để đối chiếu và tránh sai sót.'],
+      ['Kiểm kê bắt buộc có biên bản xác nhận','Mỗi lần ghi kiểm kê đều phải đính kèm ảnh biên bản xác nhận. Hệ thống lưu lại người kiểm kê và thời điểm kiểm kê để bảo đảm tính minh bạch.'],
+      ['Bơm bán ra ngoài không trừ tồn téc','Chỉ phiếu bơm cho xe của công ty mới trừ vào tồn của téc. Phiếu bơm bán cho khách bên ngoài được ghi nhận riêng và không làm giảm tồn téc.'],
+      ['Chênh lệch khi tịnh téc và kiểm kê','Khi tồn thực tế thấp hơn tồn trên sổ, phần thiếu được ghi là tịnh âm; khi cao hơn, phần dư được ghi là tịnh dương. Hệ thống phân bổ phần chênh lệch cho các xe đã bơm trong kỳ theo tỉ lệ số lít.'],
+      ['Chỉ Admin được sửa hoặc xóa phiếu đã duyệt','Người dùng thường không thể thay đổi phiếu sau khi đã duyệt. Khi cần chỉnh sửa sai sót, hãy đề nghị Admin. Mọi thay đổi của Admin đều được lưu vào lịch sử.'],
+    ];
+    const GUIDE_EXCEPTIONS = [
+      ['Lưu phiếu nhưng tải ảnh bị lỗi','Nếu phiếu đã lưu mà ảnh tải lên thất bại (thường do mạng yếu), hãy mở lại phiếu ở danh sách bên dưới và chọn ảnh để tải lại. Số liệu phiếu vẫn được giữ.'],
+      ['Ghi kiểm kê bị lỗi sau khi đã chọn ảnh','Nếu quá trình ghi kiểm kê thất bại, ảnh biên bản vừa tải lên sẽ được hệ thống tự dọn để không để lại tệp thừa. Hãy kiểm tra lại thông tin và ghi lại.'],
+      ['Nhập sai số liệu một phiếu đã duyệt','Không tự sửa bằng cách tạo phiếu bù. Hãy báo Admin để sửa hoặc xóa đúng phiếu đó, giữ cho số liệu tồn kho chính xác và có lịch sử rõ ràng.'],
+      ['Tồn kho hiển thị số âm','Số âm nghĩa là lượng xuất ghi nhận đang nhiều hơn lượng nhập cộng tồn gốc. Thường do thiếu phiếu nhập chưa ghi, sai téc, hoặc chưa đặt tồn dầu gốc. Hãy rà soát lại các phiếu của téc đó.'],
+      ['Quên mã PIN đăng nhập','Liên hệ Admin để được đặt lại mã PIN mới. Vì lý do an toàn, hệ thống không hiển thị lại mã PIN cũ.'],
+    ];
+    function renderGuide(el){
+      const g=ROLE_GUIDE[state.user.role];
+      const roleBlock = g ? `<div class="panel">
+        <h2 style="margin:0 0 4px">Dành cho vai trò của bạn: ${esc(ROLE_LABELS[state.user.role]||state.user.role)}</h2>
+        <p class="muted" style="margin:0 0 10px">${esc(g.intro)}</p>
+        ${g.tasks.map(t=>`<div style="padding:8px 0;border-top:1px solid var(--line)">
+          <b>${esc(t[0])}</b><div class="muted" style="margin-top:2px">${esc(t[1])}</div></div>`).join('')}
+      </div>` : '';
+      const section=(title,intro,items)=>`<div class="panel">
+        <h2 style="margin:0 0 ${intro?'4':'8'}px">${esc(title)}</h2>
+        ${intro?`<p class="muted" style="margin:0 0 8px">${esc(intro)}</p>`:''}
+        ${items.map(t=>`<div style="padding:10px 0;border-top:1px solid var(--line)">
+          <b>${esc(t[0])}</b><div class="muted" style="margin-top:3px;line-height:1.5">${esc(t[1])}</div></div>`).join('')}
+      </div>`;
+      el.innerHTML=`<div class="panel">
+        <h2 style="margin:0 0 4px">Hướng dẫn sử dụng</h2>
+        <p class="muted" style="margin:0">Hệ thống quản lý tồn kho xăng dầu ghi nhận toàn bộ quá trình bơm dầu ra và nhập dầu về, theo dõi tồn kho theo thời gian thực, và phục vụ đối chiếu, kiểm kê cùng báo cáo. Mỗi người dùng đăng nhập bằng email và mã PIN, và chỉ thấy những chức năng thuộc vai trò của mình.</p>
+      </div>
+      ${roleBlock}
+      ${section('Các chức năng của hệ thống','Mô tả đầy đủ từng chức năng, sắp xếp theo trình tự công việc.',GUIDE_FEATURES)}
+      ${section('Quy tắc quan trọng cần tuân thủ','Những nguyên tắc bảo đảm số liệu chính xác và minh bạch.',GUIDE_RULES)}
+      ${section('Các trường hợp ngoại lệ và cách xử lý','Hướng dẫn xử lý khi gặp tình huống bất thường.',GUIDE_EXCEPTIONS)}
+      <div class="panel"><button class="ghost" data-go="home" style="flex:0">Quay về Trang chủ</button></div>`;
       el.querySelectorAll('[data-go]').forEach(b=> b.onclick=()=>navTo(b.dataset.go));
     }
 
@@ -1386,8 +1515,54 @@
           <div style="width:${p}%;height:100%;background:${col}"></div></div>
         <span style="min-width:48px;text-align:right">${fmtNum(r.pctFull)}%</span></div>`;
     }
+    // Màu mức đầy: đỏ khi âm, cam khi vượt sức chứa hoặc dưới điểm đặt hàng, còn lại xanh.
+    function invColor(r){
+      if(Number(r.closing)<0) return 'var(--danger)';
+      if(Number(r.pctFull)>100) return '#B26B00';
+      if(Number(r.reorderPoint)>0 && Number(r.closing)<=Number(r.reorderPoint)) return '#B26B00';
+      return 'var(--ok)';
+    }
+    // Thẻ trực quan một téc: thanh mức đầy trên sức chứa + vài con số thống kê chính.
+    function invCard(r){
+      const p = r.pctFull==null ? null : Math.max(0, Math.min(100, Number(r.pctFull)));
+      const col = invColor(r);
+      const flag = invFlag(r);
+      return `<div class="inv-card">
+        <div class="inv-card-head">
+          <div><div class="inv-tank">${esc(r.tankName||'')}</div><div class="muted inv-oil">${esc(r.oilTypeName||'')}</div></div>
+          <div class="inv-pct" style="color:${col}">${p==null?'—':fmtNum(r.pctFull)+'%'}</div>
+        </div>
+        <div class="inv-track"><div class="inv-fill" style="width:${p==null?0:p}%;background:${col}"></div></div>
+        <div class="inv-nums">Tồn hiện tại <b style="${Number(r.closing)<0?'color:var(--danger)':''}">${fmtNum(r.closing)}</b> lít
+          <span class="muted">trên sức chứa ${fmtNum(r.capacity)} lít</span></div>
+        <div class="inv-chips">
+          <div class="chip"><span class="muted">Tiêu hao trung bình mỗi ngày (30 ngày)</span><b>${fmtNum(r.avgDailyMonth)} lít</b></div>
+          <div class="chip"><span class="muted">Số ngày tồn còn lại</span><b>${r.daysLeft!=null?fmtNum(r.daysLeft)+' ngày':'—'}</b></div>
+          <div class="chip"><span class="muted">Tiêu hao trung bình mỗi ngày (7 ngày)</span><b>${fmtNum(r.avgDailyWeek)} lít</b></div>
+          <div class="chip"><span class="muted">Mức tồn tối thiểu nên giữ</span><b>${fmtNum(r.minStock)} lít</b></div>
+        </div>
+        ${flag?`<div style="margin-top:10px">${flag}</div>`:''}
+      </div>`;
+    }
     function renderInventoryUI(el){
       const rows=state.stock||[];
+      // Thống kê tổng hợp toàn kho.
+      const totClosing=rows.reduce((a,r)=>a+Number(r.closing||0),0);
+      const totCap=rows.reduce((a,r)=>a+Number(r.capacity||0),0);
+      const usePct=totCap>0?Math.round(totClosing/totCap*100):null;
+      const needOrder=rows.filter(r=>
+        (Number(r.leadTimeDays)>0 && r.daysLeft!=null && Number(r.daysLeft)<=Number(r.leadTimeDays))
+        || (Number(r.reorderPoint)>0 && Number(r.closing)<=Number(r.reorderPoint))).length;
+      const summary=`<div class="stat-row">
+        <div class="stat"><div class="k">Số téc đang theo dõi</div><div class="v">${rows.length}</div></div>
+        <div class="stat"><div class="k">Tổng tồn hiện tại</div><div class="v">${fmtNum(totClosing)} <span style="font-size:13px;font-weight:600">lít</span></div></div>
+        <div class="stat"><div class="k">Tổng sức chứa</div><div class="v">${fmtNum(totCap)} <span style="font-size:13px;font-weight:600">lít</span></div></div>
+        <div class="stat"><div class="k">Mức sử dụng chung</div><div class="v" style="color:${usePct!=null&&usePct>100?'#B26B00':'inherit'}">${usePct!=null?usePct+'%':'—'}</div></div>
+        <div class="stat"><div class="k">Số téc cần đặt hàng</div><div class="v" style="color:${needOrder>0?'var(--danger)':'inherit'}">${needOrder}</div></div>
+      </div>`;
+      const cards = rows.length
+        ? `<div class="inv-grid">${rows.map(invCard).join('')}</div>`
+        : '<span class="muted">Chưa có téc nào (thêm ở Danh mục & Xe).</span>';
       const table = rows.length
         ? `<div style="overflow-x:auto"><table><thead><tr><th>Téc</th><th>Loại dầu</th><th>Tồn đầu</th><th>Nhập</th><th>Xuất</th>
             <th>Tồn cuối</th><th>Sức chứa</th><th style="min-width:140px">% đầy</th>
@@ -1403,11 +1578,15 @@
               <td>${fmtNum(r.leadTimeDays)}</td><td>${fmtNum(r.minStock)}</td>
               <td>${invFlag(r)}</td>
             </tr>`).join('')}</tbody></table></div>`
-        : '<span class="muted">Chưa có téc nào (thêm ở Danh mục & Xe).</span>';
+        : '';
       el.innerHTML=`<div class="panel"><div class="row" style="align-items:center">
           <h2 style="flex:1;margin:0">Tồn kho thời gian thực</h2>
           <button class="ghost sm" id="invReload" style="flex:0">Tải lại</button></div>
-        <div style="margin-top:8px">${table}</div></div>`;
+        ${summary}</div>
+        <div class="panel"><h2 style="margin:0 0 2px">Mức tồn theo từng téc</h2>
+          <p class="muted" style="margin:0">Thanh màu cho biết lượng dầu hiện có so với sức chứa của téc.</p>
+          ${cards}</div>
+        ${table?`<div class="panel"><h2 style="margin:0 0 8px">Bảng số liệu chi tiết</h2>${table}</div>`:''}`;
       document.getElementById('invReload').onclick=()=>renderInventory(el);
     }
 
@@ -1621,9 +1800,9 @@
       tsel.onchange=()=>{ const r=(state.stock||[]).find(x=>x.tankId===tsel.value);
         document.getElementById('opLit').value = r&&r.opening!=null?r.opening:'';
         document.getElementById('opDate').value = r&&r.openingAsOf?r.openingAsOf:today; };
-      document.getElementById('opSave').onclick=()=>saveOpening(el);
-      document.getElementById('ttSave').onclick=()=>recordPeriod(el,'tinh_tec');
-      document.getElementById('kkSave').onclick=()=>recordPeriod(el,'kiem_ke');
+      document.getElementById('opSave').onclick=function(){ withBusy(this,'Đang lưu…',()=>saveOpening(el)); };
+      document.getElementById('ttSave').onclick=function(){ withBusy(this,'Đang ghi…',()=>recordPeriod(el,'tinh_tec')); };
+      document.getElementById('kkSave').onclick=function(){ withBusy(this,'Đang ghi…',()=>recordPeriod(el,'kiem_ke')); };
       renderBienBanBox();
       renderPeriodList(el);
     }
