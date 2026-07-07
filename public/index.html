@@ -6,7 +6,7 @@
   <title>Thiên Nhật — Tồn kho Xăng dầu</title>
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" type="image/png" href="./logo.png">
-  <link rel="apple-touch-icon" href="./logo.png">
+  <link rel="apple-touch-icon" sizes="192x192" href="./icon-192.png">
   <meta name="theme-color" content="#0E5AA7">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -335,7 +335,9 @@
         document.getElementById('appView').classList.remove('hidden');
         document.getElementById('userBadge').textContent=`${state.user.name} · ${ROLE_LABELS[state.user.role]||state.user.role}`;
         const allowed=visibleScreens();
-        if(!allowed.some(s=>s[0]===state.screen)) state.screen=allowed[0][0];
+        const hashScreen=(location.hash||'').replace(/^#/,'');
+        if(hashScreen && allowed.some(s=>s[0]===hashScreen)) state.screen=hashScreen;
+        else if(!allowed.some(s=>s[0]===state.screen)) state.screen=allowed[0][0];
         renderNav(); renderScreen();
         state.histDepth=0;
         try{ history.replaceState({screen:state.screen},'','#'+state.screen); }catch(_){}
@@ -396,6 +398,12 @@
       state.screen=s; renderNav(); renderScreen(); updateBackFab();
     });
     function updateBackFab(){ const b=document.getElementById('backFab'); if(b) b.classList.toggle('show',(state.histDepth||0)>0); }
+    // Bấm push (S7) khi app đang mở → service worker báo chuyển màn Cảnh báo.
+    if('serviceWorker' in navigator){
+      navigator.serviceWorker.addEventListener('message', e=>{
+        if(e.data && e.data.type==='open-screen' && e.data.screen && state.session) navTo(e.data.screen);
+      });
+    }
 
     // ---- Chuông thông báo (panel dùng lại RPC cảnh báo S7) ----
     function closeNotif(){ document.getElementById('notifPanel')?.classList.add('hidden'); }

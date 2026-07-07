@@ -14,11 +14,11 @@ Hoàn thiện phần PWA để cài lên màn hình chính điện thoại đẹ
 
 ## Acceptance criteria
 
-- [ ] `manifest.webmanifest` hợp lệ, `icons` không rỗng (có 192/512 + maskable); cài lên màn hình chính điện thoại thấy icon đẹp, tên rút gọn đúng.
-- [ ] Service worker phục vụ vỏ app từ cache khi offline; khi có mạng lấy bản mới (network-first); không cache lời gọi Supabase.
-- [ ] Bấm vào thông báo push mở app đúng **màn Cảnh báo** (hành vi S7 không đổi).
-- [ ] apple-touch-icon + meta apple/mobile hiển thị đúng khi thêm vào Home Screen (iOS cần cài PWA).
-- [ ] Kiểm thử tĩnh (`node --check` FE/config) + QA cài đặt/offline/push đạt.
+- [x] `manifest.webmanifest` hợp lệ, `icons` không rỗng (có 192/512 + maskable); cài lên màn hình chính điện thoại thấy icon đẹp, tên rút gọn đúng.
+- [x] Service worker phục vụ vỏ app từ cache khi offline; khi có mạng lấy bản mới (network-first); không cache lời gọi Supabase.
+- [x] Bấm vào thông báo push mở app đúng **màn Cảnh báo** (hành vi S7 không đổi).
+- [x] apple-touch-icon + meta apple/mobile hiển thị đúng khi thêm vào Home Screen (iOS cần cài PWA).
+- [x] Kiểm thử tĩnh (`node --check` FE/config) + QA cài đặt/offline/push đạt.
 
 ## Blocked by
 
