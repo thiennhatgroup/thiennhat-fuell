@@ -258,6 +258,7 @@
       ['adjust',    'Tịnh téc / Kiểm kê','adjust:manage',  'S6'],
       ['alerts',    'Cảnh báo',         'alert:read',     'S7'],
       ['report',    'Báo cáo tháng',    'report:read',    'S8'],
+      ['adminLedger','Sửa phiếu (Admin)','ledger:admin',   'B6'],
       ['catalog',   'Danh mục & Xe',    'catalog:manage', 'S1'],
       ['users',     'Tài khoản',        'user:manage',    '']
     ];
@@ -267,13 +268,13 @@
     const ROLE_MENU_ORDER = {
       ThuKho: ['home','pump','nhap','inventory','adjust','report','review'],
       KeToan: ['home','pump','nhap','inventory','adjust','report','review','catalog'],
-      Admin:  ['home','pump','nhap','inventory','adjust','report','review','catalog','users']
+      Admin:  ['home','pump','nhap','inventory','adjust','report','review','adminLedger','catalog','users']
     };
     // Màn vẫn truy cập được (qua chuông/deep-link) nhưng KHÔNG hiện trong menu drawer/tab.
     const MENU_HIDDEN = ['nhapReview','alerts'];
     // Nhóm màn trong drawer: 'admin' = Quản trị, còn lại = Nghiệp vụ ('home' đứng riêng trên cùng).
     const ADMIN_SCREENS = ['catalog','users'];
-    const TAB_LABEL = { home:'Trang chủ', pump:'Nhập bơm', review:'Đối chiếu', nhap:'Phiếu nhập', nhapReview:'Đối chiếu N', inventory:'Tồn kho', adjust:'Tịnh téc', alerts:'Cảnh báo', report:'Báo cáo', catalog:'Danh mục', users:'Tài khoản' };
+    const TAB_LABEL = { home:'Trang chủ', pump:'Nhập bơm', review:'Đối chiếu', nhap:'Phiếu nhập', nhapReview:'Đối chiếu N', inventory:'Tồn kho', adjust:'Tịnh téc', alerts:'Cảnh báo', report:'Báo cáo', adminLedger:'Sửa phiếu', catalog:'Danh mục', users:'Tài khoản' };
     function orderScreensForRole(list){
       const pref = ROLE_MENU_ORDER[state.user && state.user.role] || [];
       return [...list].sort((a,b)=>{ const ia=pref.indexOf(a[0]), ib=pref.indexOf(b[0]); return (ia<0?999:ia)-(ib<0?999:ib); });
@@ -452,6 +453,7 @@
       if(state.screen==='adjust') return renderAdjust(el);
       if(state.screen==='alerts') return renderAlerts(el);
       if(state.screen==='report') return renderReport(el);
+      if(state.screen==='adminLedger') return renderAdminLedger(el);
       // Placeholder cho các slice chưa build
       el.innerHTML=`<div class="panel soon">
         <h2>${esc(scr[1])}</h2>
@@ -1314,6 +1316,123 @@
           p_as_of_date:val('opDate')||null, p_note:null });
         toast('Đã lưu tồn đầu.'); renderInventory(el);
       }catch(err){ msg.textContent=err.message; }
+    }
+
+    // ---- Màn Sửa phiếu (Admin): dashboard tất cả phiếu + sửa/xóa/lịch sử ----
+    async function renderAdminLedger(el){
+      el.innerHTML=`<div class="panel">${loadingText()}</div>`;
+      try{
+        await ensureActive();
+        if(!state.adminFilter) state.adminFilter={ days:'60', type:'', q:'' };
+        await loadAdminLedger();
+        renderAdminLedgerUI(el);
+      }catch(err){ el.innerHTML=`<div class="panel"><span class="msg">${esc(err.message)}</span></div>`; }
+    }
+    async function loadAdminLedger(){
+      const f=state.adminFilter;
+      state.adminRows=(await call('rpc_admin_ledger_list',{ p_days:Number(f.days)||60, p_entry_type:f.type||null, p_q:f.q||null })).rows||[];
+    }
+    function adminStatusBadge(r){
+      if(r.legacy) return '<span class="badge" style="background:#64707E;color:#fff">Lịch sử</span>';
+      const m={ Nhap:['Nháp','#B26B00'], ChoDoiChieu:['Chờ đối chiếu','#0E5AA7'], DaDuyet:['Đã duyệt','#1E8E5A'] };
+      const s=m[r.status]||[r.status,'#64707E'];
+      return `<span class="badge" style="background:${s[1]};color:#fff">${esc(s[0])}</span>`;
+    }
+    function renderAdminLedgerUI(el){
+      const f=state.adminFilter, rows=state.adminRows||[];
+      const table = rows.length ? `<table><thead><tr>
+          <th>Ngày</th><th>Số phiếu</th><th>Loại</th><th>Xe/NCC</th><th>Téc</th><th>Loại dầu</th><th>Số lít</th>
+          <th>Trạng thái</th><th>Sửa lần cuối</th><th></th></tr></thead><tbody>
+        ${rows.map(r=>`<tr>
+          <td>${esc(r.entryDate||'')}</td><td>${esc(r.code||'(nháp)')}</td>
+          <td>${r.entryType==='nhap'?'Nhập':'Bơm'}</td>
+          <td>${esc(r.entryType==='nhap'?(r.supplierName||''):(r.vehiclePlate||r.supplierName||''))}</td>
+          <td>${esc(r.tankName||'')}</td><td>${esc(r.oilTypeName||'')}</td><td>${fmtNum(r.liters)}</td>
+          <td>${adminStatusBadge(r)}</td>
+          <td>${r.editedAt?esc(r.editedAt)+(r.editedByName?(' · '+esc(r.editedByName)):''):'<span class="muted">—</span>'}</td>
+          <td style="white-space:nowrap">
+            <button class="ghost sm" data-aedit="${r.id}">Sửa</button>
+            <button class="ghost sm" data-ahist="${r.id}">Lịch sử</button>
+            <button class="ghost sm" data-adel="${r.id}" style="color:var(--danger)">Xóa</button></td>
+        </tr>`).join('')}</tbody></table>` : '<span class="muted">Không có phiếu nào trong khoảng đã chọn.</span>';
+      el.innerHTML=`<div class="panel"><h2>Sửa phiếu (Admin)</h2>
+        <p class="muted" style="margin-top:-6px">Sửa/xóa thẳng từng phiếu lịch sử. Mọi thay đổi được ghi lịch sử (audit) kèm thời điểm và cập nhật trực tiếp vào cơ sở dữ liệu.</p>
+        <div class="row">
+          <div><label>Khoảng ngày</label><select id="alDays">
+            <option value="30">30 ngày</option><option value="60">60 ngày</option><option value="90">90 ngày</option></select></div>
+          <div><label>Loại phiếu</label><select id="alType">
+            <option value="">Tất cả</option><option value="bom">Bơm</option><option value="nhap">Nhập</option></select></div>
+          <div style="flex:2"><label>Tìm (số phiếu, biển số, NCC, ghi chú)</label><input id="alQ" value="${esc(f.q||'')}"></div>
+        </div>
+        <div style="margin-top:10px"><button id="alApply" style="flex:0">Lọc</button></div>
+        <div style="margin-top:12px">${table}</div></div>`;
+      document.getElementById('alDays').value=String(f.days);
+      document.getElementById('alType').value=f.type||'';
+      document.getElementById('alApply').onclick=function(){ withBusy(this,'Đang lọc…',async()=>{
+        state.adminFilter={ days:val('alDays'), type:val('alType'), q:val('alQ') };
+        await loadAdminLedger(); renderAdminLedgerUI(el);
+      }); };
+      el.querySelectorAll('[data-aedit]').forEach(b=> b.onclick=()=>adminEditPhieu(b.dataset.aedit, el));
+      el.querySelectorAll('[data-ahist]').forEach(b=> b.onclick=()=>adminAuditPhieu(b.dataset.ahist));
+      el.querySelectorAll('[data-adel]').forEach(b=> b.onclick=()=>adminDeletePhieu(b.dataset.adel, el));
+    }
+    function adminEditPhieu(id, el){
+      const r=(state.adminRows||[]).find(x=>x.id===id); if(!r) return;
+      const a=state.active||{};
+      const optSel=(arr,idKey,labKey,cur)=>`<option value="">—</option>`+(arr||[]).map(x=>`<option value="${x[idKey]}" ${x[idKey]===cur?'selected':''}>${esc(x[labKey])}</option>`).join('');
+      let body;
+      if(r.entryType==='nhap'){
+        body=`<div class="row"><div><label>Ngày</label><input id="aeDate" type="date" value="${esc(r.entryDate||'')}"></div>
+            <div><label>Nhà cung cấp</label><select id="aeSup">${optSel(a.suppliers,'id','name',r.supplierId)}</select></div></div>
+          <div class="row"><div><label>Téc</label><select id="aeTank">${optSel(a.tanks,'id','name',r.tankId)}</select></div>
+            <div><label>Loại dầu</label><select id="aeOil">${optSel(a.oilTypes,'id','name',r.oilTypeId)}</select></div></div>
+          <div class="row"><div><label>Số lít</label><input id="aeLit" inputmode="decimal" value="${r.liters!=null?esc(r.liters):''}"></div>
+            <div><label>Đơn giá</label><input id="aePrice" inputmode="decimal" value="${r.unitPrice!=null?esc(r.unitPrice):''}"></div>
+            <div><label>Số HĐ NCC</label><input id="aeInv" value="${r.supplierInvoiceNo?esc(r.supplierInvoiceNo):''}"></div></div>
+          <label>Ghi chú</label><input id="aeNote" value="${r.note?esc(r.note):''}">`;
+      }else{
+        body=`<div class="row"><div><label>Ngày</label><input id="aeDate" type="date" value="${esc(r.entryDate||'')}"></div>
+            <div><label>Xe</label><select id="aeVeh">${optSel(a.vehicles,'id','plate',r.vehicleId)}</select></div></div>
+          <div class="row"><div><label>Loại giao dịch</label><select id="aeTxn">${(a.txnTypes||[]).map(t=>`<option value="${t.id}" ${t.id===r.txnTypeId?'selected':''}>${esc(t.name)}</option>`).join('')}</select></div>
+            <div><label>Téc</label><select id="aeTank">${optSel(a.tanks,'id','name',r.tankId)}</select></div></div>
+          <div class="row"><div><label>Loại dầu</label><select id="aeOil">${optSel(a.oilTypes,'id','name',r.oilTypeId)}</select></div>
+            <div><label>Số lít</label><input id="aeLit" inputmode="decimal" value="${r.liters!=null?esc(r.liters):''}"></div></div>
+          <div class="row"><div><label>KM cũ</label><input id="aeKmOld" inputmode="decimal" value="${r.kmOld!=null?esc(r.kmOld):''}"></div>
+            <div><label>KM mới</label><input id="aeKmNew" inputmode="decimal" value="${r.kmNew!=null?esc(r.kmNew):''}"></div>
+            <div><label>NCC (bơm ngoài)</label><select id="aeSup">${optSel(a.suppliers,'id','name',r.supplierId)}</select></div></div>
+          <label>Ghi chú</label><input id="aeNote" value="${r.note?esc(r.note):''}">`;
+      }
+      openModal(`Sửa phiếu ${r.code||'(nháp)'}`, body, function(btn){
+        const params={ p_id:id, p_entry_date:val('aeDate')||null, p_liters:val('aeLit')?num(val('aeLit')):null, p_note:val('aeNote') };
+        if(r.entryType==='nhap'){
+          Object.assign(params,{ p_supplier_id:val('aeSup')||null, p_tank_id:val('aeTank')||null, p_oil_type_id:val('aeOil')||null,
+            p_unit_price:val('aePrice')?num(val('aePrice')):null, p_supplier_invoice_no:val('aeInv') });
+        }else{
+          Object.assign(params,{ p_vehicle_id:val('aeVeh')||null, p_txn_type_id:val('aeTxn')||null, p_tank_id:val('aeTank')||null,
+            p_oil_type_id:val('aeOil')||null, p_km_old:val('aeKmOld')?num(val('aeKmOld')):null, p_km_new:val('aeKmNew')?num(val('aeKmNew')):null,
+            p_supplier_id:val('aeSup')||null });
+        }
+        withBusy(btn,'Đang lưu…', async()=>{
+          try{ await call('rpc_admin_ledger_update', params); closeModal(); toast('Đã cập nhật phiếu.');
+            await loadAdminLedger(); renderAdminLedgerUI(el);
+          }catch(err){ modalErr(err.message); }
+        });
+      }, 'Lưu');
+    }
+    async function adminAuditPhieu(id){
+      showModal('Lịch sử phiếu','<div class="muted">Đang tải…</div>');
+      try{ const rows=(await call('rpc_admin_ledger_audit',{p_id:id})).rows||[];
+        const html = rows.length ? rows.map(a=>`<div class="notif-item"><div class="nt-title">${esc(a.action)}</div>
+          <div class="nt-body">${esc(a.actor||'')}${a.message?(' — '+esc(a.message)):''}</div>
+          <div class="nt-time">${esc(a.time)}</div></div>`).join('') : '<div class="muted">Chưa có lịch sử.</div>';
+        showModal('Lịch sử phiếu', html);
+      }catch(err){ showModal('Lịch sử phiếu', `<span class="msg">${esc(err.message)}</span>`); }
+    }
+    async function adminDeletePhieu(id, el){
+      if(!confirm('Xóa vĩnh viễn phiếu này khỏi cơ sở dữ liệu? Hành động được ghi lịch sử.')) return;
+      try{ await call('rpc_admin_ledger_delete',{p_id:id}); toast('Đã xóa phiếu.');
+        await loadAdminLedger(); renderAdminLedgerUI(el);
+      }catch(err){ toast(err.message); }
     }
 
     // ---- Màn Tịnh téc / Kiểm kê (Kế toán) ----
