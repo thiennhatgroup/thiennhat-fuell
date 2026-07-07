@@ -88,6 +88,7 @@
   <div id="modal" class="modalOverlay"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="./config.js"></script>
   <script>
     const APP = window.APP_CONFIG || {};
@@ -188,6 +189,7 @@
       if(state.screen==='inventory') return renderInventory(el);
       if(state.screen==='adjust') return renderAdjust(el);
       if(state.screen==='alerts') return renderAlerts(el);
+      if(state.screen==='report') return renderReport(el);
       // Placeholder cho các slice chưa build
       el.innerHTML=`<div class="panel soon"><div class="big">🛠️</div>
         <h2>${esc(scr[1])}</h2>
@@ -1056,6 +1058,71 @@
               <td>${fmtNum(r.tinhAm)}</td><td>${fmtNum(r.tinhDuong)}</td></tr>`).join('')}</tbody></table>`
         : '<span class="muted">Kỳ này không có xe bơm trong kỳ (không phân bổ).</span>';
       showModal('Phân bổ tịnh cho xe', body);
+    }
+
+    // ---- Báo cáo tiêu hao tháng (S8) ----
+    function fmtL(v){ const n=Number(v||0); return n===0?'0':n.toLocaleString('vi-VN',{maximumFractionDigits:3}); }
+    async function renderReport(el){
+      const now=new Date();
+      state.report=state.report||{ month:now.getMonth()+1, year:now.getFullYear() };
+      el.innerHTML='<div class="panel muted">Đang tải…</div>';
+      try{
+        const r=await call('rpc_report_monthly',{ p_month:state.report.month, p_year:state.report.year });
+        state.reportData=r; renderReportUI(el);
+      }catch(err){ el.innerHTML=`<div class="panel"><span class="msg">${esc(err.message)}</span></div>`; }
+    }
+    function renderReportUI(el){
+      const d=state.reportData, tanks=d.tanks||[], oils=d.oils||[], rows=d.rows||[], t=d.totals||{};
+      const mopts=Array.from({length:12},(_,i)=>`<option value="${i+1}" ${d.month===i+1?'selected':''}>Tháng ${i+1}</option>`).join('');
+      const yrs=[]; for(let y=new Date().getFullYear()+1;y>=2024;y--) yrs.push(`<option value="${y}" ${d.year===y?'selected':''}>${y}</option>`);
+      const head=`<tr><th>STT</th><th>Biển số xe</th>${tanks.map(k=>`<th>${esc(k.name)}</th>`).join('')}
+        <th>Bơm ngoài</th><th>Tổng diesel</th>${oils.map(o=>`<th>${esc(o.name)}</th>`).join('')}
+        <th>Tổng dầu khác</th><th>KM</th><th>Tịnh âm</th><th>Tiêu hao thực</th><th>L/100km</th><th>Tháng trước</th></tr>`;
+      const cell=(obj,id)=>fmtL(obj&&obj[id]);
+      const body=rows.length?rows.map((r,i)=>`<tr>
+        <td>${i+1}</td><td>${esc(r.plate)}</td>
+        ${tanks.map(k=>`<td>${cell(r.tanks,k.id)}</td>`).join('')}
+        <td>${fmtL(r.bomNgoai)}</td><td style="font-weight:700">${fmtL(r.tongDiesel)}</td>
+        ${oils.map(o=>`<td>${cell(r.otherOils,o.id)}</td>`).join('')}
+        <td>${fmtL(r.tongOilKhac)}</td><td>${fmtL(r.km)}</td><td>${fmtL(r.tinhAm)}</td>
+        <td style="font-weight:700">${fmtL(r.tieuHaoThuc)}</td>
+        <td>${r.lPer100==null?'—':fmtL(r.lPer100)}</td>
+        <td class="muted">${r.lPer100Prev==null?'—':fmtL(r.lPer100Prev)}</td></tr>`).join('')
+        :`<tr><td colspan="${tanks.length+oils.length+8}" class="muted">Không có dữ liệu trong kỳ này.</td></tr>`;
+      const totCols=tanks.length+ (oils.length) ;
+      const foot=`<tr style="font-weight:800;background:var(--accent-soft)">
+        <td colspan="2">TỔNG</td>${tanks.map(()=>'<td></td>').join('')}
+        <td>${fmtL(t.bomNgoai)}</td><td>${fmtL(t.tongDiesel)}</td>${oils.map(()=>'<td></td>').join('')}
+        <td>${fmtL(t.tongOilKhac)}</td><td>${fmtL(t.km)}</td><td>${fmtL(t.tinhAm)}</td>
+        <td>${fmtL(t.tieuHaoThuc)}</td><td></td><td></td></tr>`;
+      el.innerHTML=`<div class="panel"><div class="row" style="align-items:flex-end">
+          <div style="flex:0;min-width:120px"><label>Tháng</label><select id="rpMonth">${mopts}</select></div>
+          <div style="flex:0;min-width:110px"><label>Năm</label><select id="rpYear">${yrs.join('')}</select></div>
+          <div style="flex:0"><button id="rpGo">Xem</button></div>
+          <div style="flex:0"><button class="ghost" id="rpXlsx">⬇ Tải Excel</button></div>
+        </div>
+        <p class="muted" style="margin-top:8px">Tiêu hao thực = Tổng diesel + Tịnh âm − Tịnh dương. L/100km = Tiêu hao thực ÷ KM × 100. Chỉ phiếu đã duyệt/legacy.</p>
+        <div style="overflow:auto"><table>${head}${body}${foot}</table></div></div>`;
+      document.getElementById('rpGo').onclick=()=>{ state.report={ month:Number(val('rpMonth')), year:Number(val('rpYear')) }; renderReport(el); };
+      document.getElementById('rpXlsx').onclick=()=>exportReportXlsx();
+    }
+    function exportReportXlsx(){
+      const d=state.reportData; if(!d||!window.XLSX){ toast('Chưa có dữ liệu.'); return; }
+      const tanks=d.tanks||[], oils=d.oils||[], rows=d.rows||[], t=d.totals||{};
+      const header=['STT','Biển số xe',...tanks.map(k=>k.name),'Bơm ngoài','Tổng diesel',
+        ...oils.map(o=>o.name),'Tổng dầu khác','KM','Tịnh âm','Tiêu hao thực','L/100km','L/100km tháng trước'];
+      const aoa=[[`TỔNG HỢP TIÊU HAO — Tháng ${d.month}/${d.year}`],[],header];
+      const N=v=>Number(v||0);
+      rows.forEach((r,i)=>aoa.push([i+1,r.plate,
+        ...tanks.map(k=>N(r.tanks&&r.tanks[k.id])),N(r.bomNgoai),N(r.tongDiesel),
+        ...oils.map(o=>N(r.otherOils&&r.otherOils[o.id])),N(r.tongOilKhac),N(r.km),N(r.tinhAm),
+        N(r.tieuHaoThuc),r.lPer100==null?'':N(r.lPer100),r.lPer100Prev==null?'':N(r.lPer100Prev)]));
+      aoa.push(['','TỔNG',...tanks.map(()=>''),N(t.bomNgoai),N(t.tongDiesel),
+        ...oils.map(()=>''),N(t.tongOilKhac),N(t.km),N(t.tinhAm),N(t.tieuHaoThuc),'','']);
+      const ws=window.XLSX.utils.aoa_to_sheet(aoa);
+      const wb=window.XLSX.utils.book_new();
+      window.XLSX.utils.book_append_sheet(wb, ws, `Tieu hao ${d.month}-${d.year}`);
+      window.XLSX.writeFile(wb, `tieu_hao_${d.year}_${String(d.month).padStart(2,'0')}.xlsx`);
     }
 
     // ---- Cảnh báo tồn + Web Push (S7) ----
