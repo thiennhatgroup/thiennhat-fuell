@@ -1661,21 +1661,26 @@
       if(!start){ msg.textContent='Chọn ngày bắt đầu.'; return; }
       if(kind==='tinh_tec' && (!close || close<start)){ msg.textContent='Ngày chốt phải ≥ ngày bắt đầu.'; return; }
       if(kind==='kiem_ke' && !state.kkBienBan){ msg.textContent='Đính kèm biên bản xác nhận kiểm kê.'; return; }
+      let bienBanPath=null;
       try{
-        let bienBanPath=null;
         if(kind==='kiem_ke' && state.kkBienBan){
           const f=state.kkBienBan;
           const ext=((f.name||'').split('.').pop()||'jpg').toLowerCase().replace(/[^a-z0-9]/g,'')||'jpg';
-          bienBanPath=`${monthOf(close)}/kiem-ke/${tank}-${Date.now()}.${ext}`;
-          const {error}=await sb.storage.from('chung-tu').upload(bienBanPath, f, {contentType:f.type||'image/jpeg', upsert:false});
+          const path=`${monthOf(close)}/kiem-ke/${tank}-${Date.now()}.${ext}`;
+          const {error}=await sb.storage.from('chung-tu').upload(path, f, {contentType:f.type||'image/jpeg', upsert:false});
           if(error) throw error;
+          bienBanPath=path;   // chỉ đánh dấu đã upload sau khi thành công → biết đường dọn nếu ghi kỳ lỗi
         }
         const r=await call('rpc_stock_period_record',{ p_tank_id:tank, p_kind:kind,
           p_start_date:start, p_close_date:close, p_actual_liters:num(val(P.actual)),
           p_note:val(P.note)||null, p_bien_ban_path:bienBanPath });
         toast(`Đã ghi. Tịnh âm ${fmtNum(r.tinhAm)}, tịnh dương ${fmtNum(r.tinhDuong)}.`);
         renderAdjust(el);
-      }catch(err){ msg.textContent=err.message; }
+      }catch(err){
+        // Ảnh biên bản đã lên bucket nhưng ghi kỳ lỗi → xóa ảnh mồ côi (như luồng phiếu bơm).
+        if(bienBanPath){ try{ await sb.storage.from('chung-tu').remove([bienBanPath]); }catch(_){} }
+        msg.textContent=err.message;
+      }
     }
     function renderPeriodList(el){
       const box=document.getElementById('spList'); const rows=state.periods||[];
@@ -1692,15 +1697,25 @@
           <td>${esc(r.closedByName||'')}</td><td style="white-space:nowrap">${esc(r.closedAt||'')}</td>
           <td>${r.bienBanPath?`<button class="ghost sm" data-pbien="${esc(r.bienBanPath)}">Xem</button>`:'<span class="muted">—</span>'}</td>
           <td style="white-space:nowrap">${r.status==='Mo'
-            ? `<button class="ghost sm" data-pdel="${r.id}">Xóa</button>`
+            ? `<button class="sm" data-pclose="${r.id}" style="flex:0">Chốt</button><button class="ghost sm" data-pdel="${r.id}">Xóa</button>`
             : `<button class="ghost sm" data-palloc="${r.id}">Phân bổ</button>`}</td>
         </tr>`).join('')}</tbody></table></div>`;
+      box.querySelectorAll('[data-pclose]').forEach(b=> b.onclick=()=>closePeriod(b.dataset.pclose, el));
       box.querySelectorAll('[data-pdel]').forEach(b=> b.onclick=()=>deletePeriod(b.dataset.pdel, el));
       box.querySelectorAll('[data-palloc]').forEach(b=> b.onclick=()=>viewAlloc(b.dataset.palloc));
       box.querySelectorAll('[data-pbien]').forEach(b=> b.onclick=async()=>{
         const url=await signedUrl(b.dataset.pbien);
         if(url) window.open(url,'_blank'); else toast('Không mở được ảnh.');
       });
+    }
+    // Chốt kỳ Mo cũ (từ luồng 2 bước trước đây) — luồng mới ghi thẳng nên không sinh kỳ Mo.
+    async function closePeriod(id, el){
+      const s=prompt('Nhập Tồn thực tế đo tay (lít) để chốt kỳ:',''); if(s===null) return;
+      const actual=num(s);
+      if(!confirm(`Chốt kỳ với tồn thực tế ${fmtNum(actual)} lít? Không thể sửa sau khi chốt.`)) return;
+      try{ const r=await call('rpc_stock_period_close',{ p_id:id, p_actual_liters:actual });
+        toast(`Đã chốt. Tịnh âm ${fmtNum(r.tinhAm)}, tịnh dương ${fmtNum(r.tinhDuong)}.`); renderAdjust(el);
+      }catch(err){ toast(err.message); }
     }
     async function deletePeriod(id, el){
       if(!confirm('Xóa kỳ đang mở này?')) return;
