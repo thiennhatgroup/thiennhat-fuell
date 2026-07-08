@@ -321,6 +321,7 @@
       ['pump',      'Bơm dầu',          'pump:create',    'S2'],
       ['review',    'Đối chiếu phiếu',  'ledger:flag',    'S2'],
       ['nhap',      'Nhập dầu',         'pump:create',    'S4'],
+      ['drafts',    'Phiếu nháp trong ngày','pump:create', 'B9'],
       ['nhapReview','Đối chiếu nhập',   'pump:review',    'S4'],
       ['inventory', 'Tồn kho',          'inventory:read', 'S5'],
       ['adjust',    'Tịnh téc / Kiểm kê','adjust:manage',  'S6'],
@@ -328,7 +329,8 @@
       ['report',    'Báo cáo tháng',    'report:read',    'S8'],
       ['adminLedger','Sửa phiếu (Admin)','ledger:admin',   'B6'],
       ['catalog',   'Danh mục & Xe',    'catalog:manage', 'S1'],
-      ['users',     'Tài khoản',        'user:manage',    '']
+      ['users',     'Tài khoản',        'user:manage',    ''],
+      ['myAccount', 'Tài khoản của tôi',null,             'B9']
     ];
     const ROLE_LABELS = { ThuKho:'Thủ kho', KeToan:'Kế toán tổng hợp', TruongBoPhan:'Trưởng bộ phận', Admin:'Admin' };
     // Thứ tự màn ưu tiên theo vai trò (drawer + tab-bar). Màn không liệt kê xếp sau.
@@ -336,16 +338,16 @@
     // Trưởng bộ phận + Kế toán → 3 Tồn kho, 4 Tịnh téc, 5 Báo cáo, 6 Đối chiếu phiếu + Danh mục.
     // Admin → tất cả (gồm 7 Sửa phiếu).
     const ROLE_MENU_ORDER = {
-      ThuKho:       ['home','pump','nhap','inventory'],
+      ThuKho:       ['home','pump','nhap','drafts','inventory'],
       TruongBoPhan: ['home','inventory','adjust','report','review','catalog'],
       KeToan:       ['home','inventory','adjust','report','review','catalog'],
-      Admin:        ['home','pump','nhap','inventory','adjust','report','review','adminLedger','catalog','users']
+      Admin:        ['home','pump','nhap','drafts','inventory','adjust','report','review','adminLedger','catalog','users']
     };
     // Màn vẫn truy cập được (qua chuông/deep-link) nhưng KHÔNG hiện trong menu drawer/tab.
-    const MENU_HIDDEN = ['nhapReview','alerts','guide'];
+    const MENU_HIDDEN = ['nhapReview','alerts','guide','myAccount'];
     // Nhóm màn trong drawer: 'admin' = Quản trị, còn lại = Nghiệp vụ ('home' đứng riêng trên cùng).
     const ADMIN_SCREENS = ['catalog','users'];
-    const TAB_LABEL = { home:'Trang chủ', guide:'Hướng dẫn', pump:'Bơm dầu', review:'Đối chiếu', nhap:'Nhập dầu', nhapReview:'Đối chiếu N', inventory:'Tồn kho', adjust:'Tịnh téc', alerts:'Cảnh báo', report:'Báo cáo', adminLedger:'Sửa phiếu', catalog:'Danh mục', users:'Tài khoản' };
+    const TAB_LABEL = { home:'Trang chủ', guide:'Hướng dẫn', pump:'Bơm dầu', review:'Đối chiếu', nhap:'Nhập dầu', drafts:'Nháp', nhapReview:'Đối chiếu N', inventory:'Tồn kho', adjust:'Tịnh téc', alerts:'Cảnh báo', report:'Báo cáo', adminLedger:'Sửa phiếu', catalog:'Danh mục', users:'Tài khoản', myAccount:'Tài khoản của tôi' };
     function orderScreensForRole(list){
       const pref = ROLE_MENU_ORDER[state.user && state.user.role] || [];
       return [...list].sort((a,b)=>{ const ia=pref.indexOf(a[0]), ib=pref.indexOf(b[0]); return (ia<0?999:ia)-(ib<0?999:ib); });
@@ -416,7 +418,10 @@
         state.user=res.user; state.permissions=res.permissions||[];
         document.getElementById('loginView').classList.add('hidden');
         document.getElementById('appView').classList.remove('hidden');
-        document.getElementById('userBadge').textContent=`${state.user.name} · ${ROLE_LABELS[state.user.role]||state.user.role}`;
+        const badge=document.getElementById('userBadge');
+        badge.textContent=`${state.user.name} · ${ROLE_LABELS[state.user.role]||state.user.role}`;
+        badge.style.cursor='pointer'; badge.title='Tài khoản của tôi';
+        badge.onclick=()=>navTo('myAccount');
         const allowed=visibleScreens();
         const hashScreen=(location.hash||'').replace(/^#/,'');
         if(hashScreen && allowed.some(s=>s[0]===hashScreen)) state.screen=hashScreen;
@@ -521,10 +526,12 @@
       if(state.screen==='home') return renderHome(el);
       if(state.screen==='guide') return renderGuide(el);
       if(state.screen==='users') return renderUsers(el);
+      if(state.screen==='myAccount') return renderMyAccount(el);
       if(state.screen==='catalog') return renderCatalog(el);
       if(state.screen==='pump') return renderPump(el);
       if(state.screen==='review') return renderReview(el);
       if(state.screen==='nhap') return renderNhap(el);
+      if(state.screen==='drafts') return renderDrafts(el);
       if(state.screen==='nhapReview') return renderNhapReview(el);
       if(state.screen==='inventory') return renderInventory(el);
       if(state.screen==='adjust') return renderAdjust(el);
@@ -650,6 +657,50 @@
       el.querySelectorAll('[data-go]').forEach(b=> b.onclick=()=>navTo(b.dataset.go));
     }
 
+    // ---- Màn "Tài khoản của tôi" (mọi vai trò) — xem hồ sơ + đổi mã PIN ----
+    function renderMyAccount(el){
+      const u=state.user||{};
+      el.innerHTML=`<div class="workspace"><div class="panel">
+        <h2>Hồ sơ của tôi</h2>
+        <p class="muted" style="margin:-4px 0 14px">Thông tin tài khoản. Vai trò và đơn vị do Admin cấp.</p>
+        <table class="u-table"><tbody>
+          <tr><td style="width:120px" class="muted">Email</td><td>${esc(u.email||'')}</td></tr>
+          <tr><td class="muted">Tên</td><td>${esc(u.name||'')}</td></tr>
+          <tr><td class="muted">Vai trò</td><td>${ROLE_LABELS[u.role]||esc(u.role||'')}</td></tr>
+          <tr><td class="muted">Đơn vị</td><td>${esc(u.unit||'—')}</td></tr>
+        </tbody></table>
+      </div>
+      <div class="panel sticky-col">
+        <h2>Đổi mã PIN</h2>
+        <p class="muted" style="margin:-4px 0 14px">Nhập mã PIN hiện tại để xác thực, rồi đặt mã PIN mới (≥4 số).</p>
+        <label>Mã PIN hiện tại</label>
+        <input id="mpCur" type="password" inputmode="numeric" placeholder="••••">
+        <label>Mã PIN mới (≥4 số)</label>
+        <input id="mpNew" type="password" inputmode="numeric" placeholder="••••">
+        <label>Nhập lại mã PIN mới</label>
+        <input id="mpNew2" type="password" inputmode="numeric" placeholder="••••">
+        <div style="margin-top:16px"><button id="mpSave" style="width:100%">Đổi mã PIN</button></div>
+        <div id="mpMsg" class="msg"></div>
+      </div></div>`;
+      document.getElementById('mpSave').onclick=(ev)=>changeMyPin(ev.currentTarget);
+    }
+    async function changeMyPin(btn){
+      const msg=document.getElementById('mpMsg'); msg.textContent='';
+      const cur=val('mpCur'), n1=val('mpNew'), n2=val('mpNew2');
+      if(!cur||!n1||!n2){ msg.textContent='Nhập đủ mã PIN hiện tại và mã PIN mới.'; return; }
+      if(n1.length<4){ msg.textContent='Mã PIN mới cần ít nhất 4 số.'; return; }
+      if(n1!==n2){ msg.textContent='Hai lần nhập mã PIN mới không khớp.'; return; }
+      if(n1===cur){ msg.textContent='Mã PIN mới phải khác mã PIN hiện tại.'; return; }
+      await withBusy(btn,'Đang đổi…', async()=>{
+        const {error:e1}=await sb.auth.signInWithPassword({ email:state.user.email, password:'tn-pin::'+cur });
+        if(e1){ msg.textContent='Mã PIN hiện tại không đúng.'; return; }
+        const {error:e2}=await sb.auth.updateUser({ password:'tn-pin::'+n1 });
+        if(e2){ msg.textContent=e2.message||'Đổi mã PIN thất bại.'; return; }
+        ['mpCur','mpNew','mpNew2'].forEach(id=>{ const i=document.getElementById(id); if(i) i.value=''; });
+        toast('Đã đổi mã PIN. Lần đăng nhập sau dùng mã mới.');
+      });
+    }
+
     // ---- Màn Tài khoản (Admin) — chạy thật ----
     async function renderUsers(el){
       el.innerHTML=`<div class="workspace"><div class="panel sticky-col">
@@ -668,6 +719,8 @@
           </select></div>
           <div><label>Mã PIN (≥4 số)</label><input id="uPin" inputmode="numeric" placeholder="••••"></div>
         </div>
+        <label>Đơn vị</label>
+        <input id="uUnit" placeholder="VD: Lâm Hải">
         <div style="margin-top:16px"><button id="uCreate" style="width:100%">Tạo tài khoản</button></div>
         <div id="uMsg" class="msg"></div>
       </div>
@@ -683,31 +736,40 @@
         const cnt=document.getElementById('uCount');
         if(cnt){ cnt.textContent=rows.length; cnt.classList.toggle('hidden',!rows.length); }
         if(!rows.length){ box.innerHTML='<span class="muted">Chưa có tài khoản.</span>'; return; }
-        box.innerHTML=`<table class="u-table"><thead><tr><th>Email</th><th>Tên</th><th>Vai trò</th><th>Trạng thái</th><th></th></tr></thead><tbody>
+        box.innerHTML=`<table class="u-table"><thead><tr><th>Email</th><th>Tên</th><th>Vai trò</th><th>Đơn vị</th><th>Trạng thái</th><th></th></tr></thead><tbody>
           ${rows.map(r=>`<tr>
             <td>${esc(r.email)}</td><td>${esc(r.name)}</td>
             <td>${ROLE_LABELS[r.role]||esc(r.role)}</td>
+            <td>${esc(r.unit||'—')}</td>
             <td>${r.status==='Hoạt động'?'<span class="badge">Hoạt động</span>':esc(r.status)}</td>
             <td style="white-space:nowrap">
+              <button class="ghost sm" data-unit="${r.id}" data-curunit="${esc(r.unit||'')}" data-email="${esc(r.email)}">Đơn vị</button>
               <button class="ghost sm" data-pin="${r.id}" data-email="${esc(r.email)}">Đổi PIN</button>
               <button class="ghost sm" data-toggle="${r.id}" data-status="${esc(r.status)}">${r.status==='Hoạt động'?'Ngừng':'Bật'}</button>
             </td></tr>`).join('')}
         </tbody></table>`;
         box.querySelectorAll('[data-pin]').forEach(b=> b.onclick=()=>resetPin(b.dataset.pin,b.dataset.email));
         box.querySelectorAll('[data-toggle]').forEach(b=> b.onclick=()=>toggleUser(b.dataset.toggle, b.dataset.status));
+        box.querySelectorAll('[data-unit]').forEach(b=> b.onclick=()=>setUserUnit(b.dataset.unit, b.dataset.email, b.dataset.curunit));
       }catch(err){ box.innerHTML=`<span class="msg">${esc(err.message)}</span>`; }
     }
     async function createUser(){
       const msg=document.getElementById('uMsg'); msg.textContent='';
       try{
-        await call('rpc_admin_create_user',{ p_email:val('uEmail'), p_name:val('uName'), p_role:val('uRole'), p_pin:val('uPin') });
-        toast('Đã tạo tài khoản.'); ['uEmail','uName','uPin'].forEach(id=>document.getElementById(id).value=''); loadUsers();
+        await call('rpc_admin_create_user',{ p_email:val('uEmail'), p_name:val('uName'), p_role:val('uRole'), p_pin:val('uPin'), p_unit:val('uUnit') });
+        toast('Đã tạo tài khoản.'); ['uEmail','uName','uPin','uUnit'].forEach(id=>document.getElementById(id).value=''); loadUsers();
       }catch(err){ msg.textContent=err.message; }
     }
     async function resetPin(id,email){
       const pin=(prompt(`Đặt lại PIN cho ${email} (≥4 số):`,'')||'').trim();
       if(!pin) return;
       try{ await call('rpc_admin_reset_pin',{ p_id:id, p_pin:pin }); toast('Đã đặt lại PIN.'); }
+      catch(err){ toast(err.message); }
+    }
+    async function setUserUnit(id,email,cur){
+      const unit=(prompt(`Đơn vị cho ${email}:`, cur||'')||'').trim();
+      if(unit===cur) return;
+      try{ await call('rpc_admin_update_user',{ p_id:id, p_unit:unit }); toast('Đã cập nhật đơn vị.'); loadUsers(); }
       catch(err){ toast(err.message); }
     }
     async function toggleUser(id,status){
@@ -1038,9 +1100,43 @@
     }
     // Storage chia folder theo tháng: <YYYY-MM>/<ledgerId>/<kind>-<ts>.<ext>.
     function monthOf(dateStr){ return (dateStr && /^\d{4}-\d{2}/.test(dateStr) ? dateStr : new Date().toISOString()).slice(0,7); }
+    // Ảnh luôn đóng dấu watermark rồi nén JPEG → mọi ảnh (chụp trực tiếp hoặc chọn
+    // từ album) đều lưu dạng .jpg. Giữ chữ ký cũ (nhận file) để không phá lời gọi.
     function photoPath(ym, ledgerId, kind, file){
-      const ext=((file.name||'').split('.').pop()||'jpg').toLowerCase().replace(/[^a-z0-9]/g,'')||'jpg';
-      return `${ym}/${ledgerId}/${kind}-${Date.now()}.${ext}`;
+      return `${ym}/${ledgerId}/${kind}-${Date.now()}.jpg`;
+    }
+    // Dòng chữ đóng dấu: thời điểm nộp · người nộp · đơn vị (lấy từ tài khoản đăng nhập).
+    function watermarkLines(){
+      const u=state.user||{};
+      const d=new Date(), p=n=>String(n).padStart(2,'0');
+      const when=`${p(d.getDate())}/${p(d.getMonth()+1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+      const who=(u.name||u.email||'')+(u.unit?(' · '+u.unit):'');
+      return [when, who].filter(Boolean);
+    }
+    // Vẽ ảnh lên canvas, đóng dấu thời gian/người/đơn vị, xuất Blob JPEG (cạnh dài ≤1600px).
+    function watermarkImage(file){
+      return new Promise((resolve,reject)=>{
+        const url=URL.createObjectURL(file), img=new Image();
+        img.onload=()=>{
+          try{
+            let w=img.naturalWidth||img.width, h=img.naturalHeight||img.height;
+            const scale=Math.min(1, 1600/Math.max(w,h)); w=Math.round(w*scale); h=Math.round(h*scale);
+            const c=document.createElement('canvas'); c.width=w; c.height=h;
+            const ctx=c.getContext('2d'); ctx.drawImage(img,0,0,w,h);
+            const lines=watermarkLines();
+            const fs=Math.max(14, Math.round(w*0.028)), pad=Math.round(fs*0.6), lh=Math.round(fs*1.35);
+            ctx.font=`600 ${fs}px system-ui, Arial, sans-serif`; ctx.textBaseline='alphabetic';
+            const bandH=lh*lines.length+pad*2;
+            ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.fillRect(0, h-bandH, w, bandH);
+            ctx.fillStyle='#fff';
+            lines.forEach((t,i)=> ctx.fillText(t, pad, h-bandH+pad+lh*(i+1)-Math.round(fs*0.3)));
+            URL.revokeObjectURL(url);
+            c.toBlob(b=> b?resolve(b):reject(new Error('Không tạo được ảnh đóng dấu.')), 'image/jpeg', 0.85);
+          }catch(err){ URL.revokeObjectURL(url); reject(err); }
+        };
+        img.onerror=()=>{ URL.revokeObjectURL(url); reject(new Error('Không đọc được ảnh đã chọn.')); };
+        img.src=url;
+      });
     }
     const KIND_LABEL={ pump_meter:'Ảnh đồng hồ bơm', odometer:'Ảnh công-tơ-mét' };
     function pumpSlots(vehicleId){
@@ -1070,7 +1166,7 @@
             <div style="margin-top:6px"><button class="ghost sm" data-delphoto="${up.id}">Xóa ảnh</button></div></div>`);
         }else{
           parts.push(`<div style="flex:1;min-width:160px"><label>${KIND_LABEL[kind]} ${req?'<span class="rq">*</span>':''}</label>
-            <input type="file" accept="image/*" capture="environment" data-stage="${kind}"></div>`);
+            <input type="file" accept="image/*" data-stage="${kind}"></div>`);
         }
       }
       box.innerHTML=`<div class="row">${parts.join('')}</div><div id="photoMsg" class="msg"></div>`;
@@ -1082,8 +1178,9 @@
     async function uploadStagedPumpPhotos(ledgerId, vehicleId, ym){
       for(const [kind] of pumpSlots(vehicleId)){
         const file=state.pumpStage[kind]; if(!file) continue;
+        const blob=await watermarkImage(file);
         const path=photoPath(ym, ledgerId, kind, file);
-        const {error}=await sb.storage.from('chung-tu').upload(path, file, {contentType:file.type||'image/jpeg', upsert:false});
+        const {error}=await sb.storage.from('chung-tu').upload(path, blob, {contentType:'image/jpeg', upsert:false});
         if(error) throw error;
         await call('rpc_pump_photo_add',{p_ledger_id:ledgerId, p_kind:kind, p_path:path});
       }
@@ -1181,6 +1278,87 @@
     // ---- Mục 6: Đối chiếu phiếu (Trưởng bộ phận / Kế toán) — xem lại + ảnh + nhờ Admin sửa ----
     const REVIEW_KIND_LABEL={ pump_meter:'Ảnh đồng hồ bơm', odometer:'Ảnh công-tơ-mét',
       bien_ban_giao_nhan:'Ảnh biên bản giao nhận', phieu_nhap_kho:'Ảnh phiếu nhập kho', receipt:'Ảnh chứng từ' };
+
+    // ---- Màn "Phiếu nháp trong ngày" (thủ kho) — xem chéo mọi nháp trước submit;
+    //      chỉ sửa/upload lại ảnh phiếu của chính mình (BE ép ở 0008/0018/0033). ----
+    async function renderDrafts(el){
+      el.innerHTML=`<div class="panel">${loadingText()}</div>`;
+      try{ await ensureActive(); await loadDrafts(); renderDraftsUI(el); }
+      catch(err){ el.innerHTML=`<div class="panel"><span class="msg">${esc(err.message)}</span></div>`; }
+    }
+    async function loadDrafts(){ state.drafts=(await call('rpc_drafts_pending')).rows||[]; }
+    function draftMissingPhotos(r){
+      const have=new Set(r.photoKinds||[]);
+      const need = r.entryType==='bom'
+        ? ['pump_meter'].concat(r.hasOdometer?['odometer']:[])
+        : ['bien_ban_giao_nhan','phieu_nhap_kho'];
+      return need.filter(k=>!have.has(k));
+    }
+    function renderDraftsUI(el){
+      const rows=state.drafts||[];
+      const body = rows.length ? `<table class="u-table"><thead><tr>
+          <th>Ngày</th><th>Loại</th><th>Xe / NCC</th><th>Lít</th><th>Người tạo</th><th>Ảnh</th><th></th></tr></thead><tbody>
+          ${rows.map((r,i)=>{
+            const miss=draftMissingPhotos(r);
+            const who = r.entryType==='bom' ? (r.vehiclePlate||r.supplierName||'—') : (r.supplierName||r.tankName||'—');
+            const photo = miss.length
+              ? `<span class="msg" style="margin:0">Thiếu ${miss.map(k=>REVIEW_KIND_LABEL[k]||k).join(', ')}</span>`
+              : '<span class="badge">Đủ ảnh</span>';
+            const act = r.canEdit
+              ? `<button class="ghost sm" data-dedit="${i}">Sửa</button>`
+              : `<button class="ghost sm" data-dview="${i}">Xem</button>`;
+            return `<tr>
+              <td>${esc(r.entryDate||'')}</td>
+              <td>${r.entryType==='bom'?'Bơm':'Nhập'}</td>
+              <td>${esc(who)}</td>
+              <td>${fmtNum(r.liters)}</td>
+              <td>${esc(r.createdByName||'')}${r.canEdit?' <span class="pill">bạn</span>':''}</td>
+              <td>${photo}</td>
+              <td style="white-space:nowrap">${act}</td></tr>`;
+          }).join('')}
+        </tbody></table>` : '<span class="muted">Chưa có phiếu nháp nào chờ submit.</span>';
+      el.innerHTML=`<div class="panel"><div class="list-head"><h2>Phiếu nháp trong ngày</h2>
+        <span class="count-pill${rows.length?'':' hidden'}">${rows.length}</span></div>
+        <p class="muted" style="margin:-4px 0 12px">Mọi thủ kho cùng xem phiếu nháp trước khi submit. Bạn chỉ sửa được phiếu của chính mình.</p>
+        ${body}</div>`;
+      el.querySelectorAll('[data-dedit]').forEach(b=> b.onclick=()=>openDraftForEdit(state.drafts[+b.dataset.dedit]));
+      el.querySelectorAll('[data-dview]').forEach(b=> b.onclick=()=>viewDraft(state.drafts[+b.dataset.dview]));
+    }
+    function openDraftForEdit(r){
+      if(!r) return;
+      if(r.entryType==='bom'){ state.pumpEdit=r.id; state.pumpStage={}; navTo('pump'); }
+      else{ state.nhapEdit=r.id; state.nhapStage={}; navTo('nhap'); }
+      window.scrollTo(0,0);
+    }
+    async function viewDraft(r){
+      if(!r) return;
+      const who = r.entryType==='bom' ? (r.vehiclePlate||'—') : (r.supplierName||'—');
+      const fields=[
+        ['Ngày', r.entryDate||''],
+        ['Loại', r.entryType==='bom'?'Bơm dầu':'Nhập dầu'],
+        ['Người tạo', r.createdByName||''],
+        [r.entryType==='bom'?'Xe':'Nhà cung cấp', who],
+        ['Loại giao dịch', r.txnName||'—'],
+        ['Téc', r.tankName||'—'],
+        ['Loại dầu', r.oilTypeName||'—'],
+        ['Số lít', fmtNum(r.liters)],
+        ['Đơn giá', fmtNum(r.unitPrice)],
+        ['Thành tiền', fmtNum(r.amount)],
+        ['Số HĐ NCC', r.supplierInvoiceNo||'—'],
+        ['Ghi chú', r.note||'—']
+      ].map(([k,v])=>`<tr><td class="muted" style="padding:2px 12px 2px 0;white-space:nowrap">${esc(k)}</td><td>${esc(v)}</td></tr>`).join('');
+      showModal('Phiếu nháp — '+(r.createdByName||''),
+        `<table class="line-table">${fields}</table><div id="dvPhotos" class="muted" style="margin-top:10px">Đang tải ảnh…</div>`);
+      let photos=[];
+      try{ photos=(await call('rpc_draft_photo_list',{p_ledger_id:r.id})).rows||[]; }catch(_){}
+      const pbox=document.getElementById('dvPhotos'); if(!pbox) return;
+      if(!photos.length){ pbox.innerHTML='<span class="muted">Phiếu chưa có ảnh.</span>'; return; }
+      const parts=[];
+      for(const p of photos){ const url=await signedUrl(p.path);
+        parts.push(`<div style="flex:1;min-width:200px"><label>${REVIEW_KIND_LABEL[p.kind]||esc(p.kind)}</label>
+          ${url?`<a href="${esc(url)}" target="_blank"><img class="thumb" style="max-height:none" src="${esc(url)}"></a>`:'<span class="muted">Không tải được ảnh.</span>'}</div>`); }
+      pbox.innerHTML=`<div class="row">${parts.join('')}</div>`;
+    }
     async function renderReview(el){
       el.innerHTML=`<div class="panel">${loadingText()}</div>`;
       try{
@@ -1394,7 +1572,7 @@
             <div style="margin-top:6px"><button class="ghost sm" data-delreceipt="${up.id}">Xóa ảnh</button></div></div>`);
         }else{
           parts.push(`<div style="flex:1;min-width:160px"><label>${NHAP_KIND_LABEL[kind]} <span class="rq">*</span></label>
-            <input type="file" accept="image/*" capture="environment" data-stage="${kind}"></div>`);
+            <input type="file" accept="image/*" data-stage="${kind}"></div>`);
         }
       }
       box.innerHTML=`<div class="row">${parts.join('')}</div><div id="nPhotoMsg" class="msg"></div>`;
@@ -1405,8 +1583,9 @@
     async function uploadStagedNhapPhotos(ledgerId, ym){
       for(const kind of NHAP_SLOTS){
         const file=state.nhapStage[kind]; if(!file) continue;
+        const blob=await watermarkImage(file);
         const path=photoPath(ym, ledgerId, kind, file);
-        const {error}=await sb.storage.from('chung-tu').upload(path, file, {contentType:file.type||'image/jpeg', upsert:false});
+        const {error}=await sb.storage.from('chung-tu').upload(path, blob, {contentType:'image/jpeg', upsert:false});
         if(error) throw error;
         await call('rpc_nhap_photo_add',{p_ledger_id:ledgerId, p_kind:kind, p_path:path});
       }
@@ -1897,7 +2076,7 @@
       const f=state.kkBienBan;
       box.innerHTML = f
         ? `<img class="thumb" src="${URL.createObjectURL(f)}"><div style="margin-top:6px"><button class="ghost sm" id="kkBienClear">Bỏ ảnh</button></div>`
-        : `<input type="file" accept="image/*" capture="environment" id="kkBienFile">`;
+        : `<input type="file" accept="image/*" id="kkBienFile">`;
       const inp=document.getElementById('kkBienFile');
       if(inp) inp.onchange=()=>{ if(inp.files[0]){ state.kkBienBan=inp.files[0]; renderBienBanBox(); } };
       const clr=document.getElementById('kkBienClear');
@@ -1920,9 +2099,9 @@
       try{
         if(kind==='kiem_ke' && state.kkBienBan){
           const f=state.kkBienBan;
-          const ext=((f.name||'').split('.').pop()||'jpg').toLowerCase().replace(/[^a-z0-9]/g,'')||'jpg';
-          const path=`${monthOf(close)}/kiem-ke/${tank}-${Date.now()}.${ext}`;
-          const {error}=await sb.storage.from('chung-tu').upload(path, f, {contentType:f.type||'image/jpeg', upsert:false});
+          const blob=await watermarkImage(f);
+          const path=`${monthOf(close)}/kiem-ke/${tank}-${Date.now()}.jpg`;
+          const {error}=await sb.storage.from('chung-tu').upload(path, blob, {contentType:'image/jpeg', upsert:false});
           if(error) throw error;
           bienBanPath=path;   // chỉ đánh dấu đã upload sau khi thành công → biết đường dọn nếu ghi kỳ lỗi
         }
